@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FM PAİNT - AI Hand Drawing</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;700&display=swap');
+        
+        body {
+            background-color: #111827;
+            color: #f3f4f6;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            height: 100dvh;
+            margin: 0;
+            display: flex;
+            flex-col;
+        }
+        
+        .brand-text {
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 2px;
+        }
+
+        /* Kamera Sahəsi - Üstdə 40% */
+        .camera-section {
+            height: 40vh;
+            width: 100%;
+            position: relative;
+            background: #000;
+            overflow: hidden;
+            border-bottom: 3px solid #3b82f6;
+        }
+
+        #input_video, #debug_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        /* Canvas Sahəsi - Alt tərəf */
+        .canvas-section {
+            flex-grow: 1;
+            background: #ffffff;
+            position: relative;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #drawing_canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* UI Elementləri */
+        .glass-ui {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .custom-cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #000;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+        }
+
+        #settings_drawer {
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 200;
+        }
+        #settings_drawer.closed {
+            transform: translateY(100%);
+        }
+
+        /* Landscape üçün tənzimləmə */
+        @media (orientation: landscape) {
+            .camera-section {
+                height: 35vh;
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <!-- Üst Panel: Kamera -->
+    <section class="camera-section">
+        <video id="input_video" class="absolute inset-0"></video>
+        <canvas id="debug_canvas" class="absolute inset-0"></canvas>
+        
+        <!-- Branding & Info Overlay -->
+        <div class="absolute top-4 left-4 z-10 flex flex-col gap-1">
+            <h1 class="text-xl font-black brand-text text-blue-500 drop-shadow-lg">FM PAİNT</h1>
+            <div id="gesture_badge" class="bg-black/50 px-2 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1 w-max">
+                <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                SİSTEM AKTİVDİR
+            </div>
+        </div>
+
+        <div class="absolute top-4 right-4 bg-black/50 px-2 py-1 rounded text-[10px] text-green-400 font-mono">
+            FPS: <span id="fps_counter">30</span>
+        </div>
+    </section>
+
+    <!-- Alt Panel: Rəsm Kətanı -->
+    <main class="canvas-section" id="canvas_parent">
+        <canvas id="drawing_canvas"></canvas>
+        <div id="cursor" class="custom-cursor hidden"></div>
+        
+        <!-- Tez-tez istifadə olunan düymələr -->
+        <div class="absolute bottom-6 right-6 flex flex-col gap-4">
+            <button id="clear_btn" class="w-14 h-14 bg-red-600 text-white rounded-full shadow-xl flex items-center justify-center active:scale-90 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>
+            <button id="toggle_settings" class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl flex items-center justify-center active:scale-90 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+        </div>
+
+        <!-- Yadda saxla düyməsi sol tərəfdə -->
+        <div class="absolute bottom-6 left-6">
+            <button id="save_btn" class="w-14 h-14 bg-emerald-600 text-white rounded-full shadow-xl flex items-center justify-center active:scale-90 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            </button>
+        </div>
+    </main>
+
+    <!-- Tənzimləmə Menyusu -->
+    <div id="settings_drawer" class="fixed inset-x-0 bottom-0 glass-ui rounded-t-3xl p-8 closed shadow-2xl">
+        <div class="w-12 h-1.5 bg-gray-500 rounded-full mx-auto mb-8 cursor-pointer" id="close_handle"></div>
+        
+        <div class="flex flex-col gap-8 max-w-md mx-auto">
+            <h3 class="text-center font-bold text-gray-300 uppercase tracking-widest text-sm">Alətlər və Rənglər</h3>
+            
+            <div class="space-y-6">
+                <div>
+                    <label class="flex justify-between text-xs font-bold mb-3 text-gray-400">FIRÇA ÖLÇÜSÜ <span id="size_label" class="text-blue-500">8px</span></label>
+                    <input type="range" id="brush_size" min="2" max="60" value="8" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+
+                <div class="space-y-3">
+                    <label class="text-xs font-bold text-gray-400 uppercase">Rəng Seçimi</label>
+                    <div class="grid grid-cols-6 gap-3" id="color_palette">
+                        <button class="aspect-square rounded-lg bg-black ring-2 ring-white" data-color="#000000"></button>
+                        <button class="aspect-square rounded-lg bg-red-600" data-color="#dc2626"></button>
+                        <button class="aspect-square rounded-lg bg-blue-600" data-color="#2563eb"></button>
+                        <button class="aspect-square rounded-lg bg-emerald-600" data-color="#059669"></button>
+                        <button class="aspect-square rounded-lg bg-amber-500" data-color="#f59e0b"></button>
+                        <div class="relative aspect-square rounded-lg border-2 border-dashed border-gray-600 flex items-center justify-center overflow-hidden">
+                            <input type="color" id="custom_color" class="absolute inset-0 opacity-0 cursor-pointer">
+                            <span class="text-lg text-gray-500">+</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="apply_btn" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl uppercase tracking-widest text-sm shadow-lg shadow-blue-500/30">Bağla</button>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const debugCanvas = document.getElementById('debug_canvas');
+        const debugCtx = debugCanvas.getContext('2d');
+        const drawCanvas = document.getElementById('drawing_canvas');
+        const drawCtx = drawCanvas.getContext('2d');
+        const cursorEl = document.getElementById('cursor');
+        const badgeEl = document.getElementById('gesture_badge');
+        
+        const settingsDrawer = document.getElementById('settings_drawer');
+        const brushSizeInput = document.getElementById('brush_size');
+        const colorPicker = document.getElementById('custom_color');
+        
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentColor = "#000000";
+
+        // UI Events
+        document.getElementById('toggle_settings').onclick = () => settingsDrawer.classList.toggle('closed');
+        document.getElementById('apply_btn').onclick = () => settingsDrawer.classList.add('closed');
+        document.getElementById('close_handle').onclick = () => settingsDrawer.classList.add('closed');
+
+        function resizeCanvas() {
+            const rect = drawCanvas.parentElement.getBoundingClientRect();
+            // Mövcud rəsmi qorumaq üçün backup götürürük
+            const temp = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+            drawCanvas.width = rect.width;
+            drawCanvas.height = rect.height;
+            drawCtx.fillStyle = "white";
+            drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+            drawCtx.putImageData(temp, 0, 0);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Color Palette
+        document.querySelectorAll('#color_palette button').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('#color_palette button').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+                btn.classList.add('ring-2', 'ring-white');
+                currentColor = btn.dataset.color;
+                cursorEl.style.borderColor = currentColor;
+            };
+        });
+
+        colorPicker.oninput = (e) => {
+            currentColor = e.target.value;
+            cursorEl.style.borderColor = currentColor;
+            document.querySelectorAll('#color_palette button').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+        };
+
+        brushSizeInput.oninput = (e) => {
+            document.getElementById('size_label').innerText = e.target.value + 'px';
+        };
+
+        // MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.75
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        camera.start();
+
+        function onResults(results) {
+            debugCanvas.width = videoElement.videoWidth;
+            debugCanvas.height = videoElement.videoHeight;
+            debugCtx.save();
+            debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            debugCtx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Skelet vizuallaşdırma (Kamerada)
+                drawConnectors(debugCtx, landmarks, HAND_CONNECTIONS, {color: '#3b82f6', lineWidth: 4});
+                drawLandmarks(debugCtx, landmarks, {color: '#ffffff', lineWidth: 2, radius: 4});
+
+                const indexTip = landmarks[8];
+                const middleTip = landmarks[12];
+                const indexPip = landmarks[6];
+                const middlePip = landmarks[10];
+
+                // Koordinatları alt kətana uyğunlaşdırırıq
+                // Kamerada x-i mirror edirik (1 - x)
+                const x = (1 - indexTip.x) * drawCanvas.width;
+                const y = indexTip.y * drawCanvas.height;
+
+                cursorEl.classList.remove('hidden');
+                cursorEl.style.left = `${x}px`;
+                cursorEl.style.top = `${y}px`;
+
+                // Jest Təyini
+                const isIndexUp = indexTip.y < indexPip.y;
+                const isMiddleUp = middleTip.y < middlePip.y;
+
+                if (isIndexUp && !isMiddleUp) { // RƏSM (Tək işarə barmağı)
+                    badgeEl.innerHTML = `<span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span> RƏSM ÇƏKİLİR`;
+                    badgeEl.querySelector('span').className = "w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping";
+                    performDraw(x, y, false);
+                    isDrawing = true;
+                } 
+                else if (!isIndexUp && !isMiddleUp) { // SİLGİ (Yumruq)
+                    badgeEl.innerHTML = `<span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span> SİLGİ REJİMİ`;
+                    performDraw(x, y, true);
+                    isDrawing = true;
+                }
+                else { // GƏZİNTİ
+                    badgeEl.innerHTML = `<span class="w-1.5 h-1.5 bg-gray-500 rounded-full"></span> GƏZİNTİ`;
+                    isDrawing = false;
+                }
+
+                lastX = x;
+                lastY = y;
+            } else {
+                isDrawing = false;
+                cursorEl.classList.add('hidden');
+                badgeEl.innerHTML = `<span class="w-1.5 h-1.5 bg-slate-600 rounded-full"></span> ƏL GÖZALINIR`;
+            }
+            debugCtx.restore();
+        }
+
+        function performDraw(x, y, isEraser) {
+            if (!isDrawing) return;
+
+            drawCtx.beginPath();
+            drawCtx.moveTo(lastX, lastY);
+            drawCtx.lineTo(x, y);
+            
+            if (isEraser) {
+                drawCtx.strokeStyle = "white";
+                drawCtx.lineWidth = 50;
+                drawCtx.shadowBlur = 0;
+            } else {
+                drawCtx.strokeStyle = currentColor;
+                drawCtx.lineWidth = brushSizeInput.value;
+                drawCtx.shadowBlur = 1; // Normal paint effekti üçün az parıltı
+                drawCtx.shadowColor = currentColor;
+            }
+            
+            drawCtx.lineCap = 'round';
+            drawCtx.lineJoin = 'round';
+            drawCtx.stroke();
+        }
+
+        document.getElementById('clear_btn').onclick = () => {
+            if(confirm("Bütün kətanı təmizləmək istəyirsiniz?")) {
+                drawCtx.fillStyle = "white";
+                drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+            }
+        };
+
+        document.getElementById('save_btn').onclick = () => {
+            const link = document.createElement('a');
+            link.download = `FM_PAINT_${Date.now()}.png`;
+            link.href = drawCanvas.toDataURL();
+            link.click();
+        };
+
+        // FPS Sayğacı
+        let lastFrameTime = performance.now();
+        function updateFPS() {
+            const now = performance.now();
+            const delta = now - lastFrameTime;
+            lastFrameTime = now;
+            document.getElementById('fps_counter').innerText = Math.round(1000 / delta);
+            requestAnimationFrame(updateFPS);
+        }
+        updateFPS();
+    </script>
+</body>
+</html>

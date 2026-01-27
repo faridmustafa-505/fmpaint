@@ -3,24 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Skelet və Üz Skaneri</title>
-    <!-- MediaPipe Kitabxanaları -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <title>Face ID Skaneri</title>
+    <!-- MediaPipe Face Mesh Kitabxanaları (Yalnız üz üçün - Daha sürətli) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     
-    <!-- Tailwind CSS (Dizayn üçün) -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
         body {
-            background-color: #0f172a; /* Tünd fon */
-            color: white;
+            background-color: #000;
+            color: #00ffcc;
             overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Courier New', Courier, monospace; /* Haker/Kod stili */
             margin: 0;
             padding: 0;
-            /* Mobildə sürüşdürməni bağla */
             touch-action: none; 
         }
 
@@ -31,112 +30,128 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #000;
+            background: radial-gradient(circle, #001a1a 0%, #000000 100%);
         }
 
-        /* Video gizlidir, biz nəticəni Canvas üzərində çəkəcəyik */
-        .input_video {
-            display: none;
-        }
+        .input_video { display: none; }
 
         .output_canvas {
-            /* Mobil üçün object-fit bənzəri davranış - tam ekran */
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        /* Yükləmə animasiyası */
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #00ffcc;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+        /* Skaner Xətti Animasiyası */
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: #00ffcc;
+            box-shadow: 0 0 15px #00ffcc;
+            top: 0;
+            left: 0;
+            animation: scan 3s linear infinite;
+            opacity: 0.5;
+            pointer-events: none;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 0.8; }
+            90% { opacity: 0.8; }
+            100% { top: 100%; opacity: 0; }
         }
 
-        .overlay-text {
+        /* UI Elementləri */
+        .hud-top {
             position: absolute;
             top: 20px;
-            left: 20px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
             z-index: 10;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px;
-            border-radius: 8px;
-            border-left: 4px solid #00ffcc;
-            pointer-events: none; /* Toxunuşa mane olmasın */
         }
+
+        .id-badge {
+            background: rgba(0, 20, 20, 0.85);
+            border: 1px solid #00ffcc;
+            padding: 10px 20px;
+            border-radius: 4px;
+            display: inline-block;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .loader {
+            border: 3px solid #112222;
+            border-top: 3px solid #00ffcc;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        #error-message {
-            display: none;
+        .corner-bracket {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-color: #00ffcc;
+            border-style: solid;
+            opacity: 0.6;
+            pointer-events: none;
         }
+        .tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
+        .tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
+        .bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
+        .br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
+
     </style>
 </head>
 <body>
 
     <!-- Yükləmə Ekranı -->
-    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 transition-opacity duration-500">
+    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
         <div class="loader mb-4"></div>
-        <h2 class="text-xl font-bold text-teal-400">Optimallaşdırılır...</h2>
-        <p class="text-gray-400 text-sm mt-2">Cihazınıza uyğun rejimi seçirik</p>
+        <h2 class="text-lg text-teal-400 font-mono tracking-widest">SYSTEM INITIALIZING...</h2>
     </div>
 
-    <!-- Xəta Mesajı -->
-    <div id="error-message" class="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-red-900/90 text-white p-6 text-center">
-        <h2 class="text-2xl font-bold mb-2">Kamera Xətası</h2>
-        <p class="mb-4">Kameranı işə salmaq mümkün olmadı.</p>
-        <ul class="text-left list-disc pl-6 mb-4 text-sm">
-            <li>Kameranın başqa bir proqramda (Zoom, Skype və s.) açıq olmadığını yoxlayın.</li>
-            <li>Brauzerin kamera icazələrini yoxlayın.</li>
-            <li>iOS (iPhone) istifadəçiləri üçün: Safari brauzerində sınayın.</li>
-        </ul>
-        <button onclick="location.reload()" class="px-4 py-2 bg-white text-red-900 font-bold rounded hover:bg-gray-200 transition">Səhifəni Yenilə</button>
-    </div>
+    <!-- Skaner Xətti -->
+    <div class="scan-line"></div>
 
-    <!-- Əsas Konteyner -->
+    <!-- UI Küncləri -->
+    <div class="corner-bracket tl"></div>
+    <div class="corner-bracket tr"></div>
+    <div class="corner-bracket bl"></div>
+    <div class="corner-bracket br"></div>
+
+    <!-- Məlumat Paneli -->
     <div class="canvas-container">
-        <!-- Məlumat Paneli -->
-        <div class="overlay-text hidden" id="status-panel">
-            <h1 class="text-xl font-bold text-teal-300">Bio-Skaner v1.1 (Mobil)</h1>
-            <p class="text-sm text-gray-300">Status: <span class="text-green-400">Aktiv</span></p>
-            <p class="text-xs text-gray-400 mt-1" id="device-info">Cihaz analizi...</p>
+        <div class="hud-top">
+            <div id="id-display" class="id-badge opacity-0 transform scale-90">
+                <div class="text-xs text-teal-500 uppercase tracking-widest mb-1">Identity Detected</div>
+                <div id="user-hash" class="text-2xl font-bold text-white tracking-widest font-mono">SCANNING...</div>
+            </div>
         </div>
 
-        <!-- Gizli Video Mənbəyi -->
         <video class="input_video" playsinline webkit-playsinline></video>
-        
-        <!-- Çəkilən Görüntü (Skelet və Video) -->
         <canvas class="output_canvas"></canvas>
     </div>
 
     <script>
         const videoElement = document.getElementsByClassName('input_video')[0];
         const canvasElement = document.getElementsByClassName('output_canvas')[0];
-        const canvasCtx = canvasElement.getContext('2d', { alpha: false }); // Performans üçün alpha: false
+        const canvasCtx = canvasElement.getContext('2d', { alpha: false });
         const loadingScreen = document.getElementById('loading');
-        const statusPanel = document.getElementById('status-panel');
-        const errorMessage = document.getElementById('error-message');
-        const deviceInfo = document.getElementById('device-info');
+        const idDisplay = document.getElementById('id-display');
+        const userHashText = document.getElementById('user-hash');
 
-        // Mobil və ya PC olduğunu yoxlayaq
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 800;
+        // iPhone X və Mobil üçün aşağı keyfiyyət (Amma yüksək FPS)
+        const isMobile = true; // Həmişə mobil rejimi aktiv edirik ki, sürətli olsun
         
-        // Optimallaşdırma parametrləri
-        const config = {
-            width: isMobile ? 640 : 1280, // Mobildə aşağı, PC-də yüksək keyfiyyət
-            height: isMobile ? 480 : 720,
-            modelComplexity: isMobile ? 0 : 1 // 0=Sürətli (Mobil), 1=Balanslı (PC), 2=Dəqiq
-        };
-
-        deviceInfo.innerText = isMobile ? "Mobil Rejim (Sürətli)" : "PC Rejimi (HD)";
-
-        // Canvas ölçülərini ekrana uyğunlaşdır
+        // Canvas ölçüləri
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
@@ -144,84 +159,111 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
+        // Unikal Kod Generasiyası (Stabil olması üçün yuvarlaqlaşdırma)
+        function generateFaceID(landmarks) {
+            // Əsas nöqtələr: 
+            // 33: Sol göz daxili, 263: Sağ göz daxili, 1: Burun ucu, 152: Çənə altı
+            const p1 = landmarks[33];
+            const p2 = landmarks[263];
+            const p3 = landmarks[1];
+            const p4 = landmarks[152];
+
+            // Məsafələr (Dərinliyi nəzərə almadan sadə Evklid)
+            const eyeDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            const faceLong = Math.hypot(p4.x - p3.x, p4.y - p3.y);
+            
+            // Nisbət (Ratio) - Kamera yaxınlığına görə dəyişməsin deyə
+            const ratio = (faceLong / eyeDist).toFixed(3);
+            
+            // Sadə "Hash" funksiyası
+            let hash = 0;
+            const seed = ratio.toString() + "SECRET_SALT";
+            for (let i = 0; i < seed.length; i++) {
+                const char = seed.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            
+            // Hex-ə çevir və formatla
+            const hex = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+            return `${hex.substring(0, 4)}-${hex.substring(4, 8)}`;
+        }
+
+        let lastCode = "SCANNING...";
+        let frameCounter = 0;
+
         function onResults(results) {
-            // Yükləmə bitdi
-            if (!loadingScreen.classList.contains('opacity-0')) {
-                loadingScreen.classList.add('opacity-0');
-                setTimeout(() => loadingScreen.style.display = 'none', 500);
-                statusPanel.classList.remove('hidden');
+            // İlk nəticə gələndə yükləməni gizlət
+            if (loadingScreen.style.display !== 'none') {
+                loadingScreen.style.display = 'none';
+                idDisplay.classList.remove('opacity-0', 'scale-90');
             }
 
-            // Canvas-ı təmizlə və videonu çək
-            // save/restore istifadəsini minimuma endirdik (performans üçün)
+            // Görüntünü çək
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-            // Sci-fi qaranlıq effekt
-            canvasCtx.fillStyle = 'rgba(0, 15, 30, 0.5)';
+            // Matrix/Sci-fi effekti üçün tünd filter
+            canvasCtx.fillStyle = 'rgba(0, 20, 20, 0.4)'; // Tünd yaşıl ton
             canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
-            const lineWidth = isMobile ? 2 : 4; // Mobildə xətlər nazik olsun
-            const radius = isMobile ? 2 : 3;
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
 
-            // --- 1. SKELET ---
-            if (results.poseLandmarks) {
-                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
-                               {color: '#00ffcc', lineWidth: lineWidth});
-                drawLandmarks(canvasCtx, results.poseLandmarks,
-                              {color: '#ff3366', lineWidth: 1, radius: radius});
-            }
+                // Toru Çək (Face Mesh)
+                // Çox sıx olmaması üçün sadəcə Tesselation
+                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(0, 255, 204, 0.1)', lineWidth: 0.5});
+                
+                // Gözlər və Üz Çərçivəsi (Daha parlaq)
+                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc', lineWidth: 2});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc', lineWidth: 2});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: 'rgba(0, 255, 204, 0.5)', lineWidth: 1});
 
-            // --- 2. ÜZ ---
-            if (results.faceLandmarks) {
-                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION,
-                               {color: '#dfdfdf', lineWidth: 0.5});
-                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc'});
-                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc'});
-            }
-
-            // --- 3. ƏLLƏR ---
-            if (results.leftHandLandmarks) {
-                drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS,
-                               {color: '#ffcc00', lineWidth: lineWidth});
-            }
-            if (results.rightHandLandmarks) {
-                drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS,
-                               {color: '#ffcc00', lineWidth: lineWidth});
+                // Kodu hesabla (Hər 10 kadrda bir yenilə ki, rəqəmlər titrəməsin)
+                if (frameCounter % 15 === 0) {
+                    const code = generateFaceID(landmarks);
+                    userHashText.innerText = code;
+                    userHashText.style.color = "#fff";
+                }
+                frameCounter++;
+                
+            } else {
+                // Üz yoxdursa
+                if (frameCounter % 30 === 0) {
+                     userHashText.innerText = "SEARCHING...";
+                     userHashText.style.color = "#ff3333";
+                }
+                frameCounter++;
             }
         }
 
-        const holistic = new Holistic({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
+        const faceMesh = new FaceMesh({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
         }});
 
-        holistic.setOptions({
-            modelComplexity: config.modelComplexity,
-            smoothLandmarks: true,
-            enableSegmentation: false,
-            smoothSegmentation: false,
-            refineFaceLandmarks: true,
+        faceMesh.setOptions({
+            maxNumFaces: 1, // YALNIZ 1 ÜZ - Performans üçün vacibdir
+            refineLandmarks: false, // İris (göz bəbəyi) izləməni bağla - Sürət artır
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
         });
 
-        holistic.onResults(onResults);
+        faceMesh.onResults(onResults);
 
-        // Kamera parametrləri - Optimallaşdırılmış
+        // Kamera Parametrləri - Mobil üçün "VGA" keyfiyyəti (640x480)
+        // Bu, Face Mesh üçün kifayətdir və prosessoru qızdırmır
         const camera = new Camera(videoElement, {
             onFrame: async () => {
-                await holistic.send({image: videoElement});
+                await faceMesh.send({image: videoElement});
             },
-            width: config.width,  // Cihaza uyğun ölçü
-            height: config.height,
-            facingMode: 'user'    // Ön kamera
+            width: 480,  // Çox aşağı saldım ki, sürət uçsun
+            height: 360,
+            facingMode: 'user'
         });
 
         camera.start()
-            .then(() => console.log("Kamera işə düşdü. Rejim:", isMobile ? "Mobil" : "PC"))
+            .then(() => console.log("FaceID sistemi aktivdir"))
             .catch(err => {
-                console.error("Kamera xətası:", err);
-                errorMessage.style.display = "flex";
-                loadingScreen.style.display = "none";
+                alert("Kamera xətası: " + err);
             });
 
     </script>

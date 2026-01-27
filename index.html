@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Face ID - Smart Tolerance</title>
+    <title>Face Controller Game</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
@@ -14,12 +13,13 @@
             background-color: #000;
             color: #00ffcc;
             overflow: hidden;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'Segoe UI', sans-serif;
             margin: 0;
-            touch-action: none; 
+            touch-action: none;
+            user-select: none;
         }
 
-        .canvas-container {
+        .game-container {
             position: relative;
             width: 100vw;
             height: 100vh;
@@ -32,162 +32,117 @@
         .input_video { display: none; }
         .output_canvas { width: 100%; height: 100%; object-fit: cover; }
 
-        .hud-overlay {
+        /* UI Overlay */
+        .ui-layer {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-            padding: 20px;
-            z-index: 20;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
         }
 
-        .status-box {
-            text-align: center;
-            margin-top: 40px;
-        }
-
-        .id-badge {
-            display: inline-block;
-            background: rgba(0, 20, 20, 0.9);
-            border: 2px solid #00ffcc;
-            padding: 15px 30px;
-            border-radius: 8px;
-            transition: all 0.5s ease;
-            backdrop-filter: blur(5px);
-        }
-
-        /* Access Granted (Yaşıl) */
-        .id-badge.granted {
-            border-color: #00ff00;
-            box-shadow: 0 0 30px rgba(0, 255, 0, 0.6);
-            background: rgba(0, 30, 0, 0.9);
-        }
-
-        /* Access Denied (Qırmızı) */
-        .id-badge.denied {
-            border-color: #ff0000;
-            box-shadow: 0 0 30px rgba(255, 0, 0, 0.6);
-            background: rgba(30, 0, 0, 0.9);
-        }
-
-        .scan-progress-container {
-            width: 200px;
-            height: 4px;
-            background: #333;
-            margin: 10px auto;
-            border-radius: 2px;
-            overflow: hidden;
-            display: none;
-        }
-        
-        .scan-progress-bar {
-            width: 0%;
-            height: 100%;
-            background: #00ffcc;
-            transition: width 0.1s linear;
-        }
-
-        .target-box {
+        .score-board {
             position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 280px; height: 350px;
-            border: 2px dashed rgba(0, 255, 204, 0.3);
-            border-radius: 150px;
-            transition: all 0.3s;
+            top: 20px;
+            right: 20px;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px #00ffcc;
         }
 
-        /* Düymə */
-        .controls {
-            pointer-events: auto;
+        .menu-box {
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #00ffcc;
+            padding: 40px;
+            border-radius: 20px;
             text-align: center;
-            margin-bottom: 20px;
+            pointer-events: auto;
+            box-shadow: 0 0 50px rgba(0, 255, 204, 0.3);
+            backdrop-filter: blur(10px);
         }
 
-        .action-btn {
-            background: rgba(0, 255, 204, 0.1);
-            border: 1px solid #00ffcc;
-            color: #00ffcc;
-            padding: 10px 20px;
-            font-family: inherit;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin: 0 10px;
-        }
-
-        .action-btn:hover {
+        .btn {
             background: #00ffcc;
             color: #000;
-            box-shadow: 0 0 15px #00ffcc;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .hidden { display: none; }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px #00ffcc;
+        }
+
+        .hidden { display: none !important; }
+
+        .tutorial {
+            margin-top: 10px;
+            color: #ccc;
+            font-size: 0.9rem;
+        }
 
     </style>
 </head>
 <body>
 
-    <div class="canvas-container">
-        <!-- HUD / İnterfeys -->
-        <div class="hud-overlay">
-            
-            <!-- Yuxarı Panel -->
-            <div class="status-box">
-                <div id="badge" class="id-badge transform scale-90 opacity-0 transition-opacity duration-500">
-                    <div id="status-text" class="text-xs uppercase tracking-widest mb-1 text-teal-400">ANALYZING</div>
-                    <div id="user-hash" class="text-2xl font-bold tracking-widest text-white">SCANNING...</div>
-                    
-                    <div id="progress-container" class="scan-progress-container">
-                        <div id="progress-bar" class="scan-progress-bar"></div>
-                    </div>
+    <div class="game-container">
+        <!-- Video Mənbəyi -->
+        <video class="input_video" playsinline webkit-playsinline></video>
+        <!-- Oyun Sahəsi -->
+        <canvas class="output_canvas"></canvas>
+
+        <!-- UI -->
+        <div class="score-board hidden" id="score-display">0</div>
+
+        <div class="ui-layer" id="menu-layer">
+            <div class="menu-box" id="start-screen">
+                <h1 class="text-4xl text-teal-400 font-bold mb-2">NEON RUSH</h1>
+                <p class="text-white mb-4">Başınla idarə et!</p>
+                <div class="tutorial">
+                    🟢 Yaşıl = Xal (+10)<br>
+                    🔴 Qırmızı = Oyun Bitir<br>
+                    Başını sağa-sola əyərək gəmini sür.
                 </div>
+                <button class="btn" onclick="startGame()">OYNA</button>
             </div>
 
-            <!-- Aşağı Panel (Düymələr) -->
-            <div class="controls">
-                <button id="register-btn" class="action-btn hidden" onclick="registerUser()">Məni Sahib Kimi Tanıt</button>
-                <button id="reset-btn" class="action-btn hidden" onclick="resetSystem()">Sistemi Sıfırla</button>
+            <div class="menu-box hidden" id="game-over-screen">
+                <h1 class="text-3xl text-red-500 font-bold mb-2">OYUN BİTDİ!</h1>
+                <p class="text-2xl text-white mb-4">Nəticə: <span id="final-score">0</span></p>
+                <button class="btn" onclick="startGame()">YENİDƏN</button>
             </div>
         </div>
-
-        <!-- Üz Çərçivəsi -->
-        <div id="target-reticle" class="target-box"></div>
-
-        <video class="input_video" playsinline webkit-playsinline></video>
-        <canvas class="output_canvas"></canvas>
     </div>
 
     <script>
         const videoElement = document.getElementsByClassName('input_video')[0];
         const canvasElement = document.getElementsByClassName('output_canvas')[0];
-        const canvasCtx = canvasElement.getContext('2d', { alpha: false });
-        
-        // UI
-        const badge = document.getElementById('badge');
-        const statusText = document.getElementById('status-text');
-        const userHashText = document.getElementById('user-hash');
-        const progressContainer = document.getElementById('progress-container');
-        const progressBar = document.getElementById('progress-bar');
-        const registerBtn = document.getElementById('register-btn');
-        const resetBtn = document.getElementById('reset-btn');
+        const ctx = canvasElement.getContext('2d', { alpha: false });
 
-        // Məntiq
-        let isProcessing = false;   
-        let scanFrames = 0;
-        const SCAN_DURATION = 40;   
-        let biometricSum = 0;       
-        
-        // DƏYİŞİKLİK: Artıq sadəcə kod yox, həm də xam məlumat saxlayırıq
-        let currentRawRatio = 0;
-        let ownerRawRatio = null;
-        let ownerDisplayCode = null;
+        // UI Elements
+        const scoreDisplay = document.getElementById('score-display');
+        const menuLayer = document.getElementById('menu-layer');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreEl = document.getElementById('final-score');
 
-        // Tolerantlıq dərəcəsi (0.15 = 15% fərqə icazə verir)
-        const TOLERANCE = 0.15; 
+        // Game State
+        let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+        let score = 0;
+        let playerX = 0.5; // 0.0 to 1.0
+        let gameSpeed = 3;
+        let items = []; // Objects falling down
+        let frameCount = 0;
 
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
@@ -196,166 +151,177 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Kod Generasiyası (Vizual üçün)
-        function generateVisualID(ratio) {
-            const seed = Math.floor(ratio * 1000).toString(); 
-            let hash = 0;
-            for (let i = 0; i < seed.length; i++) {
-                hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-                hash |= 0;
+        function startGame() {
+            gameState = 'PLAYING';
+            score = 0;
+            gameSpeed = 4; // Start speed
+            items = [];
+            scoreDisplay.innerText = score;
+            
+            // UI Updates
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            scoreDisplay.classList.remove('hidden');
+            menuLayer.classList.add('hidden'); // Hide overlay container so clicks don't block
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            finalScoreEl.innerText = score;
+            menuLayer.classList.remove('hidden');
+            gameOverScreen.classList.remove('hidden');
+            scoreDisplay.classList.add('hidden');
+        }
+
+        function spawnItem() {
+            const type = Math.random() > 0.3 ? 'BAD' : 'GOOD'; // 70% Bad, 30% Good
+            items.push({
+                x: Math.random(), // 0.0 to 1.0
+                y: -0.1, // Start above screen
+                type: type,
+                size: type === 'BAD' ? 0.08 : 0.06 // Relative size
+            });
+        }
+
+        function updateGameLogic(aspectRatio) {
+            // Spawn items
+            if (frameCount % 40 === 0) { // Every ~1.5 seconds
+                spawnItem();
+                // Speed up slightly
+                if (gameSpeed < 15) gameSpeed += 0.05;
             }
-            const hex = Math.abs(hash).toString(16).toUpperCase().padEnd(8, 'X');
-            return `${hex.substring(0, 4)}-${hex.substring(4, 8)}`;
-        }
+            frameCount++;
 
-        // Sahib Kimi Qeydiyyat
-        function registerUser() {
-            if (currentRawRatio > 0) {
-                // Hazırki ölçüləri "Sahib" ölçüsü kimi yadda saxla
-                ownerRawRatio = currentRawRatio;
-                ownerDisplayCode = generateVisualID(currentRawRatio);
+            // Move & Check Collisions
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
                 
-                alert("Uğurlu! Üz quruluşunuz yadda saxlanıldı.\nSistem indi kiçik dəyişiklikləri nəzərə alacaq.");
-                
-                registerBtn.classList.add('hidden');
-                resetBtn.classList.remove('hidden');
-                resetScan(); 
+                // Move down (speed adjusted by screen height roughly)
+                item.y += gameSpeed / 1000; 
+
+                // Draw Item Logic is handled in draw section, but logic is here
+                // Collision Detection
+                // Player is at playerX, y = 0.85
+                const playerY = 0.85;
+                const hitDistX = 0.1; // Hitbox width
+                const hitDistY = 0.1; // Hitbox height
+
+                // Simple box collision in normalized coordinates
+                if (item.y > playerY - hitDistY/2 && item.y < playerY + hitDistY/2) {
+                    if (Math.abs(item.x - playerX) < hitDistX) {
+                        // HIT!
+                        if (item.type === 'GOOD') {
+                            score += 10;
+                            scoreDisplay.innerText = score;
+                            // Remove item
+                            items.splice(i, 1);
+                            continue;
+                        } else {
+                            // BAD ITEM
+                            gameOver();
+                            return;
+                        }
+                    }
+                }
+
+                // Remove if off screen
+                if (item.y > 1.1) {
+                    items.splice(i, 1);
+                }
             }
         }
 
-        // Sıfırlama
-        function resetSystem() {
-            ownerRawRatio = null;
-            ownerDisplayCode = null;
-            resetBtn.classList.add('hidden');
-            registerBtn.classList.remove('hidden'); 
-            currentRawRatio = 0;
-            alert("Sistem sıfırlandı.");
-            resetScan();
-        }
+        function drawGame(canvasWidth, canvasHeight) {
+            // 1. Draw Player (Triangle/Ship)
+            const px = playerX * canvasWidth; // Flip logic handled before? No, playerX comes from mirrored video usually
+            const py = canvasHeight * 0.85;
+            const size = 40;
 
-        function resetScan() {
-            isProcessing = false;
-            scanFrames = 0;
-            biometricSum = 0;
-            badge.className = "id-badge transform scale-90 opacity-0"; 
-            progressContainer.style.display = 'none';
+            ctx.beginPath();
+            ctx.moveTo(px, py - size);
+            ctx.lineTo(px - size, py + size);
+            ctx.lineTo(px + size, py + size);
+            ctx.fillStyle = '#00ffcc';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#00ffcc';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // 2. Draw Items
+            items.forEach(item => {
+                const ix = item.x * canvasWidth;
+                const iy = item.y * canvasHeight;
+                const iSize = item.size * canvasWidth; // Scale by width
+
+                ctx.beginPath();
+                if (item.type === 'GOOD') {
+                    // Green Ball
+                    ctx.arc(ix, iy, iSize/2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00ff00';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#00ff00';
+                } else {
+                    // Red Spike/Virus
+                    ctx.moveTo(ix, iy - iSize/2);
+                    ctx.lineTo(ix + iSize/2, iy + iSize/2);
+                    ctx.lineTo(ix - iSize/2, iy + iSize/2);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff0000';
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
         }
 
         function onResults(results) {
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-            
-            let bgStyle = 'rgba(0, 15, 30, 0.6)';
-            
-            // Arxa fon rəngi (Sahib tanınarsa Yaşıl)
-            if (ownerRawRatio && !isProcessing && currentRawRatio > 0) {
-                 if (isMatch(currentRawRatio, ownerRawRatio)) bgStyle = 'rgba(0, 30, 0, 0.8)'; 
-                 else bgStyle = 'rgba(40, 0, 0, 0.8)'; 
-            }
-            
-            canvasCtx.fillStyle = bgStyle;
-            canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+            // 1. Draw Video Background
+            ctx.save();
+            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            // Mirror image for natural feel
+            ctx.translate(canvasElement.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            ctx.restore();
 
+            // Darken filter
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
+            // 2. Detect Player Position (Nose)
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
                 const landmarks = results.multiFaceLandmarks[0];
-                badge.classList.remove('opacity-0', 'scale-90');
-
-                if (!isProcessing && scanFrames === 0) {
-                    isProcessing = true;
-                }
-
-                if (isProcessing) {
-                    scanFrames++;
-                    
-                    // Hesablama
-                    const n = landmarks[1];
-                    const c = landmarks[152];
-                    const l = landmarks[33];
-                    const r = landmarks[263];
-                    const width = Math.hypot(r.x - l.x, r.y - l.y);
-                    const height = Math.hypot(c.x - n.x, c.y - n.y);
-                    if (width > 0) biometricSum += (height / width);
-
-                    // UI Update
-                    progressContainer.style.display = 'block';
-                    progressBar.style.width = Math.min((scanFrames / SCAN_DURATION) * 100, 100) + '%';
-                    statusText.innerText = "CALCULATING...";
-                    statusText.className = "text-xs uppercase tracking-widest mb-1 text-teal-400";
-                    userHashText.innerText = "Scanning...";
-
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(0, 255, 204, 0.1)', lineWidth: 0.5});
-
-                    if (scanFrames >= SCAN_DURATION) {
-                        isProcessing = false;
-                        currentRawRatio = biometricSum / scanFrames;
-                        
-                        // Nəticəni Yoxla
-                        checkIdentity(currentRawRatio);
-                    }
-                } 
-                else if (currentRawRatio > 0) {
-                    // Skan bitib, nəticəni göstəririk
-                    let color = '#00ffcc';
-                    if (ownerRawRatio) {
-                        color = isMatch(currentRawRatio, ownerRawRatio) ? '#00ff00' : '#ff0000';
-                    }
-                    
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: color});
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: color, lineWidth: 2});
-                }
-
-            } else {
-                resetScan();
-                // Üz yoxdursa düyməni gizlət (əgər hələ sahib yoxdursa)
-                if (!ownerRawRatio) registerBtn.classList.add('hidden');
+                const nose = landmarks[1]; // Nose tip
+                
+                // Update global player X (Mirror logic: 1 - x)
+                // MediaPipe x is 0-1 from left to right.
+                // Since we mirrored the canvas draw, we also need to treat input as mirrored for logic if we want "moving right moves right".
+                // Actually, if I move head right, x increases. 
+                // Let's just use 1-nose.x to match the mirrored video.
+                playerX = 1 - nose.x;
             }
-        }
 
-        // Tolerantlıq yoxlaması
-        function isMatch(current, owner) {
-            const diff = Math.abs(current - owner);
-            return diff < TOLERANCE; // Fərq 0.15-dən kiçikdirsə, TANIDI sayılır
-        }
-
-        function checkIdentity(ratio) {
-            progressContainer.style.display = 'none';
-            
-            // Kodun vizual görüntüsü
-            let visualCode = generateVisualID(ratio);
-
-            if (ownerRawRatio === null) {
-                // Hələ sahib yoxdur
-                statusText.innerText = "UNKNOWN ID";
-                statusText.className = "text-xs uppercase tracking-widest mb-1 text-yellow-400";
-                userHashText.innerText = visualCode;
-                badge.className = "id-badge";
-                registerBtn.classList.remove('hidden');
-            } else {
-                // Sahib var, müqayisə et
-                if (isMatch(ratio, ownerRawRatio)) {
-                    // UĞURLU (Kod fərqli olsa belə, sahibin kodunu göstər ki, stabil görünsün)
-                    statusText.innerText = "ACCESS GRANTED";
-                    statusText.className = "text-xs uppercase tracking-widest mb-1 text-green-400";
-                    badge.className = "id-badge granted";
-                    userHashText.innerText = ownerDisplayCode; // Sahibin kodunu məcbur göstər
-                } else {
-                    // UĞURSUZ
-                    statusText.innerText = "ACCESS DENIED";
-                    statusText.className = "text-xs uppercase tracking-widest mb-1 text-red-500";
-                    badge.className = "id-badge denied";
-                    userHashText.innerText = "UNKNOWN";
-                }
+            // 3. Game Logic Loop (Only if playing)
+            if (gameState === 'PLAYING') {
+                updateGameLogic(canvasElement.width / canvasElement.height);
+                drawGame(canvasElement.width, canvasElement.height);
             }
         }
 
         const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
         faceMesh.onResults(onResults);
 
         const camera = new Camera(videoElement, {
             onFrame: async () => await faceMesh.send({image: videoElement}),
-            width: 480, height: 360, facingMode: 'user'
+            width: 640, // Low res for performance
+            height: 480,
+            facingMode: 'user'
         });
         camera.start();
 

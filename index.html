@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Face ID Skaneri</title>
-    <!-- MediaPipe Face Mesh Kitabxanaları (Yalnız üz üçün - Daha sürətli) -->
+    <title>Face ID - Stabil Kilid</title>
+    <!-- MediaPipe (Yalnız Face Mesh - Sürətli) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -17,9 +17,8 @@
             background-color: #000;
             color: #00ffcc;
             overflow: hidden;
-            font-family: 'Courier New', Courier, monospace; /* Haker/Kod stili */
+            font-family: 'Courier New', Courier, monospace;
             margin: 0;
-            padding: 0;
             touch-action: none; 
         }
 
@@ -30,111 +29,110 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            background: radial-gradient(circle, #001a1a 0%, #000000 100%);
+            background: #000;
         }
 
         .input_video { display: none; }
-
-        .output_canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        /* Skaner Xətti Animasiyası */
-        .scan-line {
-            position: absolute;
-            width: 100%;
-            height: 4px;
-            background: #00ffcc;
-            box-shadow: 0 0 15px #00ffcc;
-            top: 0;
-            left: 0;
-            animation: scan 3s linear infinite;
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        @keyframes scan {
-            0% { top: 0%; opacity: 0; }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.8; }
-            100% { top: 100%; opacity: 0; }
-        }
+        .output_canvas { width: 100%; height: 100%; object-fit: cover; }
 
         /* UI Elementləri */
-        .hud-top {
+        .hud-overlay {
             position: absolute;
-            top: 20px;
-            width: 100%;
-            text-align: center;
+            top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            z-index: 20;
+        }
+
+        /* Status Paneli */
+        .status-box {
+            text-align: center;
+            margin-top: 40px;
         }
 
         .id-badge {
-            background: rgba(0, 20, 20, 0.85);
-            border: 1px solid #00ffcc;
-            padding: 10px 20px;
-            border-radius: 4px;
             display: inline-block;
-            box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
-            transition: all 0.3s ease;
+            background: rgba(0, 20, 20, 0.9);
+            border: 2px solid #00ffcc; /* Default: Skan rəngi */
+            padding: 15px 30px;
+            border-radius: 8px;
+            transition: all 0.5s ease;
+            backdrop-filter: blur(5px);
         }
 
-        .loader {
-            border: 3px solid #112222;
-            border-top: 3px solid #00ffcc;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+        .id-badge.locked {
+            border-color: #00ff00; /* Kilidlənəndə Yaşıl */
+            box-shadow: 0 0 25px rgba(0, 255, 0, 0.4);
+            background: rgba(0, 30, 0, 0.9);
         }
 
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Progress Bar (Skan edilərkən) */
+        .scan-progress-container {
+            width: 200px;
+            height: 4px;
+            background: #333;
+            margin: 10px auto;
+            border-radius: 2px;
+            overflow: hidden;
+            display: none; /* Başlanğıcda gizli */
+        }
         
-        .corner-bracket {
-            position: absolute;
-            width: 40px;
-            height: 40px;
-            border-color: #00ffcc;
-            border-style: solid;
-            opacity: 0.6;
-            pointer-events: none;
+        .scan-progress-bar {
+            width: 0%;
+            height: 100%;
+            background: #00ffcc;
+            transition: width 0.1s linear;
         }
-        .tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
-        .tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
-        .bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
-        .br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
+
+        .target-box {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 280px; height: 350px;
+            border: 2px dashed rgba(0, 255, 204, 0.3);
+            border-radius: 150px;
+            transition: all 0.3s;
+        }
+        
+        .target-box.locked {
+            border: 2px solid #00ff00;
+            border-radius: 10px; /* Kvadratlaşır */
+            width: 300px; height: 100px; /* ID kart formasına düşür */
+            opacity: 0; /* Kilidlənəndə çərçivə itir */
+        }
 
     </style>
 </head>
 <body>
 
-    <!-- Yükləmə Ekranı -->
-    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
-        <div class="loader mb-4"></div>
-        <h2 class="text-lg text-teal-400 font-mono tracking-widest">SYSTEM INITIALIZING...</h2>
-    </div>
-
-    <!-- Skaner Xətti -->
-    <div class="scan-line"></div>
-
-    <!-- UI Küncləri -->
-    <div class="corner-bracket tl"></div>
-    <div class="corner-bracket tr"></div>
-    <div class="corner-bracket bl"></div>
-    <div class="corner-bracket br"></div>
-
-    <!-- Məlumat Paneli -->
     <div class="canvas-container">
-        <div class="hud-top">
-            <div id="id-display" class="id-badge opacity-0 transform scale-90">
-                <div class="text-xs text-teal-500 uppercase tracking-widest mb-1">Identity Detected</div>
-                <div id="user-hash" class="text-2xl font-bold text-white tracking-widest font-mono">SCANNING...</div>
+        <!-- HUD / İnterfeys -->
+        <div class="hud-overlay">
+            
+            <!-- Yuxarı Panel -->
+            <div class="status-box">
+                <div id="badge" class="id-badge transform scale-90 opacity-0 transition-opacity duration-500">
+                    <div id="status-text" class="text-xs uppercase tracking-widest mb-1 text-teal-400">ANALYZING BIOMETRICS</div>
+                    <div id="user-hash" class="text-3xl font-bold tracking-widest text-white">SCANNING...</div>
+                    
+                    <!-- Skan Çubuğu -->
+                    <div id="progress-container" class="scan-progress-container">
+                        <div id="progress-bar" class="scan-progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aşağı Məlumat -->
+            <div class="text-center text-xs text-gray-500 font-mono mb-4">
+                SECURE CONNECTION // <span id="fps-counter">0</span> FPS
             </div>
         </div>
+
+        <!-- Üz Çərçivəsi (Ortadakı dairə) -->
+        <div id="target-reticle" class="target-box"></div>
 
         <video class="input_video" playsinline webkit-playsinline></video>
         <canvas class="output_canvas"></canvas>
@@ -144,14 +142,27 @@
         const videoElement = document.getElementsByClassName('input_video')[0];
         const canvasElement = document.getElementsByClassName('output_canvas')[0];
         const canvasCtx = canvasElement.getContext('2d', { alpha: false });
-        const loadingScreen = document.getElementById('loading');
-        const idDisplay = document.getElementById('id-display');
-        const userHashText = document.getElementById('user-hash');
-
-        // iPhone X və Mobil üçün aşağı keyfiyyət (Amma yüksək FPS)
-        const isMobile = true; // Həmişə mobil rejimi aktiv edirik ki, sürətli olsun
         
-        // Canvas ölçüləri
+        // UI Elementləri
+        const badge = document.getElementById('badge');
+        const statusText = document.getElementById('status-text');
+        const userHashText = document.getElementById('user-hash');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const targetReticle = document.getElementById('target-reticle');
+        const fpsCounter = document.getElementById('fps-counter');
+
+        // Məntiq Dəyişənləri
+        let isLocked = false;       // Kod tapılıbmı?
+        let lockedCode = "";        // Tapılan kod
+        let scanFrames = 0;         // Neçə kadr üz görünüb
+        const SCAN_DURATION = 60;   // Təxminən 2 saniyə (30 FPS x 2)
+        let lastFrameTime = 0;
+        
+        // STABİLLİK ÜÇÜN DƏYİŞƏN
+        let biometricSum = 0;       // Bütün kadrların cəmi
+
+        // Ekran ölçüləri
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
@@ -159,80 +170,110 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Unikal Kod Generasiyası (Stabil olması üçün yuvarlaqlaşdırma)
-        function generateFaceID(landmarks) {
-            // Əsas nöqtələr: 
-            // 33: Sol göz daxili, 263: Sağ göz daxili, 1: Burun ucu, 152: Çənə altı
-            const p1 = landmarks[33];
-            const p2 = landmarks[263];
-            const p3 = landmarks[1];
-            const p4 = landmarks[152];
-
-            // Məsafələr (Dərinliyi nəzərə almadan sadə Evklid)
-            const eyeDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            const faceLong = Math.hypot(p4.x - p3.x, p4.y - p3.y);
+        // KOD GENERASİYASI (YENİLƏNİB)
+        function generateStableID(averageRatio) {
+            // Çox dəqiq rəqəmləri silirik (Quantization)
+            // Məsələn 1.54323 -> 1.54
+            // Bu, titrəməni tamamilə öldürür. 
+            // 0.01 dəqiqlik kifayət qədər unikallıq verir amma sabitdir.
+            const quant = averageRatio.toFixed(2); 
             
-            // Nisbət (Ratio) - Kamera yaxınlığına görə dəyişməsin deyə
-            const ratio = (faceLong / eyeDist).toFixed(3);
-            
-            // Sadə "Hash" funksiyası
+            // Hash funksiyası (Eyni qaldı, amma giriş artıq sabitdir)
             let hash = 0;
-            const seed = ratio.toString() + "SECRET_SALT";
+            const seed = quant.toString() + "SALTY_KEY_V2"; 
             for (let i = 0; i < seed.length; i++) {
-                const char = seed.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
+                hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+                hash |= 0;
             }
             
-            // Hex-ə çevir və formatla
-            const hex = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
-            return `${hex.substring(0, 4)}-${hex.substring(4, 8)}`;
+            const hex = Math.abs(hash).toString(16).toUpperCase().padEnd(8, 'X');
+            return `ID: ${hex.substring(0, 4)}-${hex.substring(4, 8)}`;
         }
 
-        let lastCode = "SCANNING...";
-        let frameCounter = 0;
-
         function onResults(results) {
-            // İlk nəticə gələndə yükləməni gizlət
-            if (loadingScreen.style.display !== 'none') {
-                loadingScreen.style.display = 'none';
-                idDisplay.classList.remove('opacity-0', 'scale-90');
-            }
+            // FPS Hesablama
+            const now = performance.now();
+            const fps = Math.round(1000 / (now - lastFrameTime));
+            lastFrameTime = now;
+            if(scanFrames % 10 === 0) fpsCounter.innerText = fps;
 
             // Görüntünü çək
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-            // Matrix/Sci-fi effekti üçün tünd filter
-            canvasCtx.fillStyle = 'rgba(0, 20, 20, 0.4)'; // Tünd yaşıl ton
+            // Sci-fi qaranlıq effekt
+            canvasCtx.fillStyle = isLocked ? 'rgba(0, 20, 0, 0.7)' : 'rgba(0, 15, 30, 0.5)';
             canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
                 const landmarks = results.multiFaceLandmarks[0];
 
-                // Toru Çək (Face Mesh)
-                // Çox sıx olmaması üçün sadəcə Tesselation
-                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(0, 255, 204, 0.1)', lineWidth: 0.5});
-                
-                // Gözlər və Üz Çərçivəsi (Daha parlaq)
-                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc', lineWidth: 2});
-                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc', lineWidth: 2});
-                drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: 'rgba(0, 255, 204, 0.5)', lineWidth: 1});
+                // Badge-i göstər
+                badge.classList.remove('opacity-0', 'scale-90');
 
-                // Kodu hesabla (Hər 10 kadrda bir yenilə ki, rəqəmlər titrəməsin)
-                if (frameCounter % 15 === 0) {
-                    const code = generateFaceID(landmarks);
-                    userHashText.innerText = code;
-                    userHashText.style.color = "#fff";
+                if (!isLocked) {
+                    // --- FAZA 1: SKAN EDİLİR & ORTALAMA ALINIR ---
+                    scanFrames++;
+                    
+                    // Biometrik məlumatı topla (Ortalama üçün)
+                    const n = landmarks[1];   // Burun
+                    const c = landmarks[152]; // Çənə
+                    const l = landmarks[33];  // Sol Göz küncü
+                    const r = landmarks[263]; // Sağ Göz küncü
+                    
+                    const width = Math.hypot(r.x - l.x, r.y - l.y);
+                    const height = Math.hypot(c.x - n.x, c.y - n.y);
+                    
+                    // Sıfıra bölmə xətası olmasın
+                    if (width > 0) {
+                        biometricSum += (height / width);
+                    }
+                    
+                    // Skan prosesini vizuallaşdır
+                    progressContainer.style.display = 'block';
+                    const percent = Math.min((scanFrames / SCAN_DURATION) * 100, 100);
+                    progressBar.style.width = percent + '%';
+                    
+                    userHashText.innerText = "CALCULATING..."; // Artıq dəyişən rəqəm göstərmirik
+                    statusText.innerText = "HOLD STILL";
+                    statusText.className = "text-xs uppercase tracking-widest mb-1 text-teal-400";
+
+                    // Üz torunu çək (Skan edərkən)
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(0, 255, 204, 0.1)', lineWidth: 0.5});
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc'});
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc'});
+
+                    // Skan bitdimi?
+                    if (scanFrames >= SCAN_DURATION) {
+                        isLocked = true;
+                        
+                        // ORTALAMANI HESABLA
+                        const averageRatio = biometricSum / scanFrames;
+                        lockedCode = generateStableID(averageRatio);
+                        
+                        // UI Dəyişikliyi -> KİLİDLƏNDİ
+                        badge.classList.add('locked');
+                        userHashText.innerText = lockedCode;
+                        statusText.innerText = "IDENTITY CONFIRMED";
+                        statusText.className = "text-xs uppercase tracking-widest mb-1 text-green-400";
+                        progressContainer.style.display = 'none';
+                        targetReticle.classList.add('locked');
+                    }
+                } else {
+                    // --- FAZA 2: KİLİDLƏNİB ---
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#00ff00', lineWidth: 2});
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#00ff00'});
+                    drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#00ff00'});
                 }
-                frameCounter++;
-                
+
             } else {
-                // Üz yoxdursa
-                if (frameCounter % 30 === 0) {
-                     userHashText.innerText = "SEARCHING...";
-                     userHashText.style.color = "#ff3333";
-                }
-                frameCounter++;
+                // --- ÜZ YOXDUR (RESET) ---
+                isLocked = false;
+                scanFrames = 0;
+                biometricSum = 0; // Sıfırla
+                badge.classList.remove('locked');
+                badge.classList.add('opacity-0', 'scale-90');
+                targetReticle.classList.remove('locked');
+                progressContainer.style.display = 'none';
             }
         }
 
@@ -241,30 +282,25 @@
         }});
 
         faceMesh.setOptions({
-            maxNumFaces: 1, // YALNIZ 1 ÜZ - Performans üçün vacibdir
-            refineLandmarks: false, // İris (göz bəbəyi) izləməni bağla - Sürət artır
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+            maxNumFaces: 1,
+            refineLandmarks: false,
+            minDetectionConfidence: 0.6, 
+            minTrackingConfidence: 0.6
         });
 
         faceMesh.onResults(onResults);
 
-        // Kamera Parametrləri - Mobil üçün "VGA" keyfiyyəti (640x480)
-        // Bu, Face Mesh üçün kifayətdir və prosessoru qızdırmır
+        // Maksimum Performans üçün VGA ölçüsü
         const camera = new Camera(videoElement, {
             onFrame: async () => {
                 await faceMesh.send({image: videoElement});
             },
-            width: 480,  // Çox aşağı saldım ki, sürət uçsun
+            width: 480,
             height: 360,
             facingMode: 'user'
         });
 
-        camera.start()
-            .then(() => console.log("FaceID sistemi aktivdir"))
-            .catch(err => {
-                alert("Kamera xətası: " + err);
-            });
+        camera.start().catch(e => console.error(e));
 
     </script>
 </body>

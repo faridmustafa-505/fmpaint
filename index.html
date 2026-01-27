@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Face ID - Şəxsi Sistem</title>
+    <title>Face ID - Smart Tolerance</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -176,13 +176,18 @@
         const resetBtn = document.getElementById('reset-btn');
 
         // Məntiq
-        let isProcessing = false;   // Hazırda skan gedir?
+        let isProcessing = false;   
         let scanFrames = 0;
-        const SCAN_DURATION = 50;   // Skan müddəti
-        let biometricSum = 0;       // Ortalama üçün
+        const SCAN_DURATION = 40;   
+        let biometricSum = 0;       
         
-        let detectedCode = null;    // Son tapılan kod
-        let registeredOwnerCode = null; // YADDAŞDAKI SAHİB KODU
+        // DƏYİŞİKLİK: Artıq sadəcə kod yox, həm də xam məlumat saxlayırıq
+        let currentRawRatio = 0;
+        let ownerRawRatio = null;
+        let ownerDisplayCode = null;
+
+        // Tolerantlıq dərəcəsi (0.15 = 15% fərqə icazə verir)
+        const TOLERANCE = 0.15; 
 
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
@@ -191,11 +196,10 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Kod Generasiyası
-        function generateStableID(averageRatio) {
-            const quant = averageRatio.toFixed(2); // Sabitlik üçün
+        // Kod Generasiyası (Vizual üçün)
+        function generateVisualID(ratio) {
+            const seed = Math.floor(ratio * 1000).toString(); 
             let hash = 0;
-            const seed = quant.toString() + "PRIVATE_KEY_V3"; 
             for (let i = 0; i < seed.length; i++) {
                 hash = ((hash << 5) - hash) + seed.charCodeAt(i);
                 hash |= 0;
@@ -206,22 +210,27 @@
 
         // Sahib Kimi Qeydiyyat
         function registerUser() {
-            if (detectedCode) {
-                registeredOwnerCode = detectedCode;
-                alert("Üzünüz 'SAHİB' (Owner) kimi qeydə alındı!\nİndi sistem yalnız sizi tanıyacaq.");
+            if (currentRawRatio > 0) {
+                // Hazırki ölçüləri "Sahib" ölçüsü kimi yadda saxla
+                ownerRawRatio = currentRawRatio;
+                ownerDisplayCode = generateVisualID(currentRawRatio);
+                
+                alert("Uğurlu! Üz quruluşunuz yadda saxlanıldı.\nSistem indi kiçik dəyişiklikləri nəzərə alacaq.");
+                
                 registerBtn.classList.add('hidden');
                 resetBtn.classList.remove('hidden');
-                resetScan(); // Yenidən yoxla
+                resetScan(); 
             }
         }
 
         // Sıfırlama
         function resetSystem() {
-            registeredOwnerCode = null;
+            ownerRawRatio = null;
+            ownerDisplayCode = null;
             resetBtn.classList.add('hidden');
-            registerBtn.classList.remove('hidden'); // Düyməni geri gətir, amma göstərmək üçün yenidən skan lazımdır
-            detectedCode = null;
-            alert("Sistem sıfırlandı. Yeni sahib əlavə edə bilərsiniz.");
+            registerBtn.classList.remove('hidden'); 
+            currentRawRatio = 0;
+            alert("Sistem sıfırlandı.");
             resetScan();
         }
 
@@ -229,20 +238,19 @@
             isProcessing = false;
             scanFrames = 0;
             biometricSum = 0;
-            badge.className = "id-badge transform scale-90 opacity-0"; // Reset styles
+            badge.className = "id-badge transform scale-90 opacity-0"; 
             progressContainer.style.display = 'none';
         }
 
         function onResults(results) {
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
             
-            // Qaranlıq fon
             let bgStyle = 'rgba(0, 15, 30, 0.6)';
             
-            // Əgər nəticə bəllidirsə, fon rəngini dəyiş
-            if (registeredOwnerCode && detectedCode) {
-                 if (detectedCode === registeredOwnerCode) bgStyle = 'rgba(0, 30, 0, 0.8)'; // Yaşıl
-                 else bgStyle = 'rgba(40, 0, 0, 0.8)'; // Qırmızı
+            // Arxa fon rəngi (Sahib tanınarsa Yaşıl)
+            if (ownerRawRatio && !isProcessing && currentRawRatio > 0) {
+                 if (isMatch(currentRawRatio, ownerRawRatio)) bgStyle = 'rgba(0, 30, 0, 0.8)'; 
+                 else bgStyle = 'rgba(40, 0, 0, 0.8)'; 
             }
             
             canvasCtx.fillStyle = bgStyle;
@@ -252,10 +260,8 @@
                 const landmarks = results.multiFaceLandmarks[0];
                 badge.classList.remove('opacity-0', 'scale-90');
 
-                // Əgər hələ kod tapılmayıbsa, skan et
-                if (!detectedCode && !isProcessing) {
+                if (!isProcessing && scanFrames === 0) {
                     isProcessing = true;
-                    // Start Scan
                 }
 
                 if (isProcessing) {
@@ -273,29 +279,25 @@
                     // UI Update
                     progressContainer.style.display = 'block';
                     progressBar.style.width = Math.min((scanFrames / SCAN_DURATION) * 100, 100) + '%';
-                    statusText.innerText = "IDENTIFYING...";
+                    statusText.innerText = "CALCULATING...";
                     statusText.className = "text-xs uppercase tracking-widest mb-1 text-teal-400";
-                    userHashText.innerText = "WAIT...";
+                    userHashText.innerText = "Scanning...";
 
-                    // Visuals
                     drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(0, 255, 204, 0.1)', lineWidth: 0.5});
 
-                    // Skan bitdi
                     if (scanFrames >= SCAN_DURATION) {
                         isProcessing = false;
-                        const avg = biometricSum / scanFrames;
-                        detectedCode = generateStableID(avg);
+                        currentRawRatio = biometricSum / scanFrames;
                         
                         // Nəticəni Yoxla
-                        checkIdentity(detectedCode);
+                        checkIdentity(currentRawRatio);
                     }
                 } 
-                else if (detectedCode) {
-                    // Artıq kod var, sadəcə vizual saxla
-                    // Əgər sahib varsa, müqayisə rəngləri, yoxsa normal
+                else if (currentRawRatio > 0) {
+                    // Skan bitib, nəticəni göstəririk
                     let color = '#00ffcc';
-                    if (registeredOwnerCode) {
-                        color = (detectedCode === registeredOwnerCode) ? '#00ff00' : '#ff0000';
+                    if (ownerRawRatio) {
+                        color = isMatch(currentRawRatio, ownerRawRatio) ? '#00ff00' : '#ff0000';
                     }
                     
                     drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: color});
@@ -304,46 +306,51 @@
                 }
 
             } else {
-                // Üz itdi -> Reset
                 resetScan();
-                detectedCode = null;
-                // Düymələri gizlət ki, boşluğa basılmasın
-                if (!registeredOwnerCode) registerBtn.classList.add('hidden');
+                // Üz yoxdursa düyməni gizlət (əgər hələ sahib yoxdursa)
+                if (!ownerRawRatio) registerBtn.classList.add('hidden');
             }
         }
 
-        function checkIdentity(code) {
-            progressContainer.style.display = 'none';
-            userHashText.innerText = code;
+        // Tolerantlıq yoxlaması
+        function isMatch(current, owner) {
+            const diff = Math.abs(current - owner);
+            return diff < TOLERANCE; // Fərq 0.15-dən kiçikdirsə, TANIDI sayılır
+        }
 
-            if (registeredOwnerCode === null) {
-                // Heç kim qeydiyyatda deyil
-                statusText.innerText = "UNKNOWN USER";
+        function checkIdentity(ratio) {
+            progressContainer.style.display = 'none';
+            
+            // Kodun vizual görüntüsü
+            let visualCode = generateVisualID(ratio);
+
+            if (ownerRawRatio === null) {
+                // Hələ sahib yoxdur
+                statusText.innerText = "UNKNOWN ID";
                 statusText.className = "text-xs uppercase tracking-widest mb-1 text-yellow-400";
-                badge.className = "id-badge"; // Neytral
-                
-                // Qeydiyyat düyməsini göstər
+                userHashText.innerText = visualCode;
+                badge.className = "id-badge";
                 registerBtn.classList.remove('hidden');
             } else {
-                // Sahib var, yoxla
-                if (code === registeredOwnerCode) {
-                    // UĞURLU
-                    statusText.innerText = "XOŞ GƏLDİNİZ, SAHİB";
+                // Sahib var, müqayisə et
+                if (isMatch(ratio, ownerRawRatio)) {
+                    // UĞURLU (Kod fərqli olsa belə, sahibin kodunu göstər ki, stabil görünsün)
+                    statusText.innerText = "ACCESS GRANTED";
                     statusText.className = "text-xs uppercase tracking-widest mb-1 text-green-400";
                     badge.className = "id-badge granted";
-                    userHashText.innerText = "ACCESS GRANTED";
+                    userHashText.innerText = ownerDisplayCode; // Sahibin kodunu məcbur göstər
                 } else {
                     // UĞURSUZ
-                    statusText.innerText = "GİRİŞ QADAĞANDIR";
+                    statusText.innerText = "ACCESS DENIED";
                     statusText.className = "text-xs uppercase tracking-widest mb-1 text-red-500";
                     badge.className = "id-badge denied";
-                    userHashText.innerText = "ACCESS DENIED";
+                    userHashText.innerText = "UNKNOWN";
                 }
             }
         }
 
         const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6});
+        faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
         faceMesh.onResults(onResults);
 
         const camera = new Camera(videoElement, {

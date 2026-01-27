@@ -2,7 +2,7 @@
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Skelet və Üz Skaneri</title>
     <!-- MediaPipe Kitabxanaları -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
@@ -18,6 +18,10 @@
             color: white;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            /* Mobildə sürüşdürməni bağla */
+            touch-action: none; 
         }
 
         .canvas-container {
@@ -27,6 +31,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            background: #000;
         }
 
         /* Video gizlidir, biz nəticəni Canvas üzərində çəkəcəyik */
@@ -35,11 +40,10 @@
         }
 
         .output_canvas {
-            max-width: 100%;
-            max-height: 100%;
-            border: 2px solid #00ffcc;
-            box-shadow: 0 0 20px #00ffcc;
-            background-color: #000;
+            /* Mobil üçün object-fit bənzəri davranış - tam ekran */
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
         /* Yükləmə animasiyası */
@@ -66,6 +70,7 @@
             padding: 10px;
             border-radius: 8px;
             border-left: 4px solid #00ffcc;
+            pointer-events: none; /* Toxunuşa mane olmasın */
         }
         
         #error-message {
@@ -78,8 +83,8 @@
     <!-- Yükləmə Ekranı -->
     <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 transition-opacity duration-500">
         <div class="loader mb-4"></div>
-        <h2 class="text-xl font-bold text-teal-400">Süni İntellekt Modeli Yüklənir...</h2>
-        <p class="text-gray-400 text-sm mt-2">Zəhmət olmasa gözləyin (ilk dəfə bir az vaxt ala bilər)</p>
+        <h2 class="text-xl font-bold text-teal-400">Optimallaşdırılır...</h2>
+        <p class="text-gray-400 text-sm mt-2">Cihazınıza uyğun rejimi seçirik</p>
     </div>
 
     <!-- Xəta Mesajı -->
@@ -89,7 +94,7 @@
         <ul class="text-left list-disc pl-6 mb-4 text-sm">
             <li>Kameranın başqa bir proqramda (Zoom, Skype və s.) açıq olmadığını yoxlayın.</li>
             <li>Brauzerin kamera icazələrini yoxlayın.</li>
-            <li>Səhifəni yeniləyin.</li>
+            <li>iOS (iPhone) istifadəçiləri üçün: Safari brauzerində sınayın.</li>
         </ul>
         <button onclick="location.reload()" class="px-4 py-2 bg-white text-red-900 font-bold rounded hover:bg-gray-200 transition">Səhifəni Yenilə</button>
     </div>
@@ -98,13 +103,13 @@
     <div class="canvas-container">
         <!-- Məlumat Paneli -->
         <div class="overlay-text hidden" id="status-panel">
-            <h1 class="text-xl font-bold text-teal-300">Bio-Skaner v1.0</h1>
+            <h1 class="text-xl font-bold text-teal-300">Bio-Skaner v1.1 (Mobil)</h1>
             <p class="text-sm text-gray-300">Status: <span class="text-green-400">Aktiv</span></p>
-            <p class="text-xs text-gray-400 mt-1">Skelet, Üz və Əl analizi aparılır...</p>
+            <p class="text-xs text-gray-400 mt-1" id="device-info">Cihaz analizi...</p>
         </div>
 
         <!-- Gizli Video Mənbəyi -->
-        <video class="input_video"></video>
+        <video class="input_video" playsinline webkit-playsinline></video>
         
         <!-- Çəkilən Görüntü (Skelet və Video) -->
         <canvas class="output_canvas"></canvas>
@@ -113,10 +118,23 @@
     <script>
         const videoElement = document.getElementsByClassName('input_video')[0];
         const canvasElement = document.getElementsByClassName('output_canvas')[0];
-        const canvasCtx = canvasElement.getContext('2d');
+        const canvasCtx = canvasElement.getContext('2d', { alpha: false }); // Performans üçün alpha: false
         const loadingScreen = document.getElementById('loading');
         const statusPanel = document.getElementById('status-panel');
         const errorMessage = document.getElementById('error-message');
+        const deviceInfo = document.getElementById('device-info');
+
+        // Mobil və ya PC olduğunu yoxlayaq
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 800;
+        
+        // Optimallaşdırma parametrləri
+        const config = {
+            width: isMobile ? 640 : 1280, // Mobildə aşağı, PC-də yüksək keyfiyyət
+            height: isMobile ? 480 : 720,
+            modelComplexity: isMobile ? 0 : 1 // 0=Sürətli (Mobil), 1=Balanslı (PC), 2=Dəqiq
+        };
+
+        deviceInfo.innerText = isMobile ? "Mobil Rejim (Sürətli)" : "PC Rejimi (HD)";
 
         // Canvas ölçülərini ekrana uyğunlaşdır
         function resizeCanvas() {
@@ -126,99 +144,82 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Nəticələr gələndə bu funksiya işləyir
         function onResults(results) {
-            // Yükləmə ekranını gizlət
+            // Yükləmə bitdi
             if (!loadingScreen.classList.contains('opacity-0')) {
                 loadingScreen.classList.add('opacity-0');
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
                 statusPanel.classList.remove('hidden');
             }
 
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
-            // Videonu fon kimi çək
+            // Canvas-ı təmizlə və videonu çək
+            // save/restore istifadəsini minimuma endirdik (performans üçün)
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-            // Görüntünü bir az qaralt ki, sümüklər daha parlaq görünsün (Sci-fi effekti)
-            canvasCtx.fillStyle = 'rgba(0, 15, 30, 0.6)';
+            // Sci-fi qaranlıq effekt
+            canvasCtx.fillStyle = 'rgba(0, 15, 30, 0.5)';
             canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
-            // Qlobal xətt qalınlığı və rəng tənzimləmələri
-            const connectorColor = '#00ffcc'; // Neon yaşıl/mavi
-            const landmarkColor = '#ff3366';  // Neon qırmızı nöqtələr
+            const lineWidth = isMobile ? 2 : 4; // Mobildə xətlər nazik olsun
+            const radius = isMobile ? 2 : 3;
 
-            // --- 1. BƏDƏN (SKELET) POZASI ---
+            // --- 1. SKELET ---
             if (results.poseLandmarks) {
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
-                               {color: connectorColor, lineWidth: 4});
+                               {color: '#00ffcc', lineWidth: lineWidth});
                 drawLandmarks(canvasCtx, results.poseLandmarks,
-                              {color: landmarkColor, lineWidth: 2, radius: 3});
+                              {color: '#ff3366', lineWidth: 1, radius: radius});
             }
 
-            // --- 2. ÜZ MESH (TORU) ---
+            // --- 2. ÜZ ---
             if (results.faceLandmarks) {
-                // Üzün konturlarını çəkirik (Daha yüngül görüntü üçün TESSELATION istifadə edirik)
                 drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION,
-                               {color: '#dfdfdf', lineWidth: 0.5}); // Boz nazik xətlər
-                
-                // Gözlər və qaşlar üçün xüsusi vurğu
+                               {color: '#dfdfdf', lineWidth: 0.5});
                 drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc'});
                 drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc'});
             }
 
-            // --- 3. SOL ƏL ---
+            // --- 3. ƏLLƏR ---
             if (results.leftHandLandmarks) {
                 drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS,
-                               {color: '#ffcc00', lineWidth: 3}); // Sarı xətlər
-                drawLandmarks(canvasCtx, results.leftHandLandmarks,
-                              {color: '#ffffff', lineWidth: 2, radius: 4});
+                               {color: '#ffcc00', lineWidth: lineWidth});
             }
-
-            // --- 4. SAĞ ƏL ---
             if (results.rightHandLandmarks) {
                 drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS,
-                               {color: '#ffcc00', lineWidth: 3});
-                drawLandmarks(canvasCtx, results.rightHandLandmarks,
-                              {color: '#ffffff', lineWidth: 2, radius: 4});
+                               {color: '#ffcc00', lineWidth: lineWidth});
             }
-
-            canvasCtx.restore();
         }
 
-        // Holistic Modelini Yükləyirik
         const holistic = new Holistic({locateFile: (file) => {
             return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
         }});
 
         holistic.setOptions({
-            modelComplexity: 1, 
+            modelComplexity: config.modelComplexity,
             smoothLandmarks: true,
             enableSegmentation: false,
             smoothSegmentation: false,
-            refineFaceLandmarks: true, 
+            refineFaceLandmarks: true,
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
         });
 
         holistic.onResults(onResults);
 
-        // Kameranı işə salırıq - XƏTA DÜZƏLİŞİ: en və hündürlük məcburiyyəti götürüldü
+        // Kamera parametrləri - Optimallaşdırılmış
         const camera = new Camera(videoElement, {
             onFrame: async () => {
                 await holistic.send({image: videoElement});
-            }
-            // width: 1280,  <-- Bu sətirləri sildim ki, brauzer özü qərar versin
-            // height: 720
+            },
+            width: config.width,  // Cihaza uyğun ölçü
+            height: config.height,
+            facingMode: 'user'    // Ön kamera
         });
 
-        // Səhifə açılanda kamera başlasın
         camera.start()
-            .then(() => console.log("Kamera işə düşdü"))
+            .then(() => console.log("Kamera işə düşdü. Rejim:", isMobile ? "Mobil" : "PC"))
             .catch(err => {
                 console.error("Kamera xətası:", err);
-                // Xəta ekranını göstər
                 errorMessage.style.display = "flex";
                 loadingScreen.style.display = "none";
             });

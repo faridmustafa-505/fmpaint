@@ -2,366 +2,226 @@
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FM GALAXY ATTACK - AI Hand Game</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skelet və Üz Skaneri</title>
+    <!-- MediaPipe Kitabxanaları -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <!-- Tailwind CSS (Dizayn üçün) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
-        
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
+        body {
+            background-color: #0f172a; /* Tünd fon */
+            color: white;
             overflow: hidden;
-            background-color: #000;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
-        /* Kamera və Oyun Sahəsi - Tam Ekran */
-        #game_container {
+        .canvas-container {
             position: relative;
             width: 100vw;
             height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
-        #input_video {
+        /* Video gizlidir, biz nəticəni Canvas üzərində çəkəcəyik */
+        .input_video {
             display: none;
         }
 
-        #game_canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+        .output_canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 20px #00ffcc;
+            background-color: #000;
         }
 
-        .ui-overlay {
+        /* Yükləmə animasiyası */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #00ffcc;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .overlay-text {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 20px;
-            z-index: 50;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #00ffcc;
         }
-
-        .brand-text {
-            font-family: 'Orbitron', sans-serif;
-            text-shadow: 0 0 10px rgba(59, 130, 246, 0.8);
-        }
-
-        #start_screen {
-            position: absolute;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-        }
-
-        .neon-button {
-            background: transparent;
-            border: 2px solid #3b82f6;
-            color: #3b82f6;
-            padding: 15px 40px;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.2rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            pointer-events: auto;
-        }
-
-        .neon-button:hover {
-            background: #3b82f6;
-            color: white;
-            box-shadow: 0 0 20px #3b82f6;
+        
+        #error-message {
+            display: none;
         }
     </style>
 </head>
 <body>
 
-    <div id="game_container">
-        <!-- Kamera Girişi -->
-        <video id="input_video" autoplay muted playsinline></video>
+    <!-- Yükləmə Ekranı -->
+    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 transition-opacity duration-500">
+        <div class="loader mb-4"></div>
+        <h2 class="text-xl font-bold text-teal-400">Süni İntellekt Modeli Yüklənir...</h2>
+        <p class="text-gray-400 text-sm mt-2">Zəhmət olmasa gözləyin (ilk dəfə bir az vaxt ala bilər)</p>
+    </div>
+
+    <!-- Xəta Mesajı -->
+    <div id="error-message" class="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-red-900/90 text-white p-6 text-center">
+        <h2 class="text-2xl font-bold mb-2">Kamera Xətası</h2>
+        <p class="mb-4">Kameranı işə salmaq mümkün olmadı.</p>
+        <ul class="text-left list-disc pl-6 mb-4 text-sm">
+            <li>Kameranın başqa bir proqramda (Zoom, Skype və s.) açıq olmadığını yoxlayın.</li>
+            <li>Brauzerin kamera icazələrini yoxlayın.</li>
+            <li>Səhifəni yeniləyin.</li>
+        </ul>
+        <button onclick="location.reload()" class="px-4 py-2 bg-white text-red-900 font-bold rounded hover:bg-gray-200 transition">Səhifəni Yenilə</button>
+    </div>
+
+    <!-- Əsas Konteyner -->
+    <div class="canvas-container">
+        <!-- Məlumat Paneli -->
+        <div class="overlay-text hidden" id="status-panel">
+            <h1 class="text-xl font-bold text-teal-300">Bio-Skaner v1.0</h1>
+            <p class="text-sm text-gray-300">Status: <span class="text-green-400">Aktiv</span></p>
+            <p class="text-xs text-gray-400 mt-1">Skelet, Üz və Əl analizi aparılır...</p>
+        </div>
+
+        <!-- Gizli Video Mənbəyi -->
+        <video class="input_video"></video>
         
-        <!-- Oyun Sahəsi -->
-        <canvas id="game_canvas"></canvas>
-
-        <!-- Başlanğıc Ekranı -->
-        <div id="start_screen">
-            <h1 class="text-4xl md:text-6xl font-black brand-text text-blue-500 mb-4">FM GALAXY ATTACK</h1>
-            <p class="text-gray-300 mb-8 max-w-md px-6">İşarə barmağınızdan istifadə edərək kosmik hədəfləri məhv edin. 60 saniyə vaxtınız var!</p>
-            <button id="start_btn" class="neon-button rounded-full">OYUNA BAŞLA</button>
-        </div>
-
-        <!-- UI Təbəqəsi -->
-        <div class="ui-overlay">
-            <div class="flex justify-between items-start">
-                <div class="glass-ui bg-black/40 p-4 rounded-2xl border border-white/10 backdrop-blur-md">
-                    <p class="text-[10px] text-blue-400 font-bold uppercase">XAL</p>
-                    <p id="score_val" class="text-3xl font-black brand-text">0</p>
-                </div>
-                <div class="glass-ui bg-black/40 p-4 rounded-2xl border border-white/10 backdrop-blur-md text-right">
-                    <p class="text-[10px] text-red-400 font-bold uppercase">ZAMAN</p>
-                    <p id="timer_val" class="text-3xl font-black brand-text">60s</p>
-                </div>
-            </div>
-
-            <div id="game_msg" class="text-center opacity-0 transition-opacity duration-500">
-                <p class="text-2xl font-bold text-yellow-400 brand-text uppercase">MÖHTƏŞƏM!</p>
-            </div>
-
-            <div class="flex justify-center pb-4">
-                <div class="bg-black/50 px-4 py-2 rounded-full border border-white/10 text-[10px] text-gray-400 uppercase tracking-widest">
-                    FM GAMES • JEST İDARƏETMƏSİ
-                </div>
-            </div>
-        </div>
+        <!-- Çəkilən Görüntü (Skelet və Video) -->
+        <canvas class="output_canvas"></canvas>
     </div>
 
     <script>
-        const videoElement = document.getElementById('input_video');
-        const canvasElement = document.getElementById('game_canvas');
+        const videoElement = document.getElementsByClassName('input_video')[0];
+        const canvasElement = document.getElementsByClassName('output_canvas')[0];
         const canvasCtx = canvasElement.getContext('2d');
-        const startScreen = document.getElementById('start_screen');
-        const startBtn = document.getElementById('start_btn');
-        const scoreVal = document.getElementById('score_val');
-        const timerVal = document.getElementById('timer_val');
-        const gameMsg = document.getElementById('game_msg');
+        const loadingScreen = document.getElementById('loading');
+        const statusPanel = document.getElementById('status-panel');
+        const errorMessage = document.getElementById('error-message');
 
-        let score = 0;
-        let timeLeft = 60;
-        let gameActive = false;
-        let targets = [];
-        let particles = [];
-        let handX = 0;
-        let handY = 0;
-        let handActive = false;
-
-        // Kətanı tam ekran edirik
-        function resize() {
+        // Canvas ölçülərini ekrana uyğunlaşdır
+        function resizeCanvas() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
         }
-        window.addEventListener('resize', resize);
-        resize();
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
-        // Hədəf obyekti
-        class Target {
-            constructor() {
-                this.x = Math.random() * (canvasElement.width - 100) + 50;
-                this.y = Math.random() * (canvasElement.height - 100) + 50;
-                this.radius = Math.random() * 20 + 20;
-                this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
-                this.pulse = 0;
-            }
-
-            draw() {
-                this.pulse += 0.1;
-                const s = this.radius + Math.sin(this.pulse) * 5;
-                
-                canvasCtx.beginPath();
-                canvasCtx.arc(this.x, this.y, s, 0, Math.PI * 2);
-                canvasCtx.fillStyle = this.color;
-                canvasCtx.shadowBlur = 20;
-                canvasCtx.shadowColor = this.color;
-                canvasCtx.fill();
-                canvasCtx.closePath();
-                
-                // Daxili halqa
-                canvasCtx.beginPath();
-                canvasCtx.arc(this.x, this.y, s * 0.6, 0, Math.PI * 2);
-                canvasCtx.strokeStyle = "white";
-                canvasCtx.lineWidth = 2;
-                canvasCtx.stroke();
-                canvasCtx.closePath();
-                canvasCtx.shadowBlur = 0;
-            }
-        }
-
-        // Partlayış hissəcikləri
-        class Particle {
-            constructor(x, y, color) {
-                this.x = x;
-                this.y = y;
-                this.color = color;
-                this.size = Math.random() * 5 + 2;
-                this.speedX = (Math.random() - 0.5) * 10;
-                this.speedY = (Math.random() - 0.5) * 10;
-                this.alpha = 1;
-            }
-
-            update() {
-                this.x += this.speedX;
-                this.y += this.speedY;
-                this.alpha -= 0.02;
-            }
-
-            draw() {
-                canvasCtx.globalAlpha = this.alpha;
-                canvasCtx.fillStyle = this.color;
-                canvasCtx.beginPath();
-                canvasCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                canvasCtx.fill();
-                canvasCtx.globalAlpha = 1;
-            }
-        }
-
-        function createTarget() {
-            if (targets.length < 5) {
-                targets.push(new Target());
-            }
-        }
-
-        // MediaPipe Hands Quraşdırılması
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
-        });
-
-        hands.onResults(onResults);
-
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 1280,
-            height: 720
-        });
-        camera.start();
-
+        // Nəticələr gələndə bu funksiya işləyir
         function onResults(results) {
+            // Yükləmə ekranını gizlət
+            if (!loadingScreen.classList.contains('opacity-0')) {
+                loadingScreen.classList.add('opacity-0');
+                setTimeout(() => loadingScreen.style.display = 'none', 500);
+                statusPanel.classList.remove('hidden');
+            }
+
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
-            // 1. Kamera görüntüsünü tam ekran çəkirik
-            canvasCtx.scale(-1, 1);
-            canvasCtx.translate(-canvasElement.width, 0);
+            // Videonu fon kimi çək
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
 
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                const indexTip = landmarks[8];
+            // Görüntünü bir az qaralt ki, sümüklər daha parlaq görünsün (Sci-fi effekti)
+            canvasCtx.fillStyle = 'rgba(0, 15, 30, 0.6)';
+            canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
+            // Qlobal xətt qalınlığı və rəng tənzimləmələri
+            const connectorColor = '#00ffcc'; // Neon yaşıl/mavi
+            const landmarkColor = '#ff3366';  // Neon qırmızı nöqtələr
+
+            // --- 1. BƏDƏN (SKELET) POZASI ---
+            if (results.poseLandmarks) {
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                               {color: connectorColor, lineWidth: 4});
+                drawLandmarks(canvasCtx, results.poseLandmarks,
+                              {color: landmarkColor, lineWidth: 2, radius: 3});
+            }
+
+            // --- 2. ÜZ MESH (TORU) ---
+            if (results.faceLandmarks) {
+                // Üzün konturlarını çəkirik (Daha yüngül görüntü üçün TESSELATION istifadə edirik)
+                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION,
+                               {color: '#dfdfdf', lineWidth: 0.5}); // Boz nazik xətlər
                 
-                // Koordinatları mirror (güzgü) əksinə görə tənzimləyirik
-                handX = (1 - indexTip.x) * canvasElement.width;
-                handY = indexTip.y * canvasElement.height;
-                handActive = true;
-
-                // "Hədəf-Göz" (Cursor) effekti
-                drawHandUI(handX, handY);
-
-                if (gameActive) {
-                    checkCollisions(handX, handY);
-                }
-            } else {
-                handActive = false;
+                // Gözlər və qaşlar üçün xüsusi vurğu
+                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_RIGHT_EYE, {color: '#00ffcc'});
+                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_LEFT_EYE, {color: '#00ffcc'});
             }
 
-            if (gameActive) {
-                updateGame();
+            // --- 3. SOL ƏL ---
+            if (results.leftHandLandmarks) {
+                drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS,
+                               {color: '#ffcc00', lineWidth: 3}); // Sarı xətlər
+                drawLandmarks(canvasCtx, results.leftHandLandmarks,
+                              {color: '#ffffff', lineWidth: 2, radius: 4});
             }
-            
+
+            // --- 4. SAĞ ƏL ---
+            if (results.rightHandLandmarks) {
+                drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS,
+                               {color: '#ffcc00', lineWidth: 3});
+                drawLandmarks(canvasCtx, results.rightHandLandmarks,
+                              {color: '#ffffff', lineWidth: 2, radius: 4});
+            }
+
             canvasCtx.restore();
         }
 
-        function drawHandUI(x, y) {
-            canvasCtx.beginPath();
-            canvasCtx.arc(x, y, 15, 0, Math.PI * 2);
-            canvasCtx.strokeStyle = "#3b82f6";
-            canvasCtx.lineWidth = 3;
-            canvasCtx.stroke();
-            
-            // Crosshair
-            canvasCtx.moveTo(x - 20, y);
-            canvasCtx.lineTo(x + 20, y);
-            canvasCtx.moveTo(x, y - 20);
-            canvasCtx.lineTo(x, y + 20);
-            canvasCtx.stroke();
-        }
+        // Holistic Modelini Yükləyirik
+        const holistic = new Holistic({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
+        }});
 
-        function checkCollisions(x, y) {
-            targets.forEach((target, index) => {
-                const dist = Math.hypot(target.x - x, target.y - y);
-                if (dist < target.radius + 15) {
-                    // Partlayış yarat
-                    for (let i = 0; i < 15; i++) {
-                        particles.push(new Particle(target.x, target.y, target.color));
-                    }
-                    // Hədəfi sil və xal yaz
-                    targets.splice(index, 1);
-                    score += 10;
-                    scoreVal.innerText = score;
-                    
-                    // Bonus mesajı
-                    if (score % 50 === 0) showBonusMsg();
-                    createTarget();
-                }
+        holistic.setOptions({
+            modelComplexity: 1, 
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            smoothSegmentation: false,
+            refineFaceLandmarks: true, 
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        holistic.onResults(onResults);
+
+        // Kameranı işə salırıq - XƏTA DÜZƏLİŞİ: en və hündürlük məcburiyyəti götürüldü
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await holistic.send({image: videoElement});
+            }
+            // width: 1280,  <-- Bu sətirləri sildim ki, brauzer özü qərar versin
+            // height: 720
+        });
+
+        // Səhifə açılanda kamera başlasın
+        camera.start()
+            .then(() => console.log("Kamera işə düşdü"))
+            .catch(err => {
+                console.error("Kamera xətası:", err);
+                // Xəta ekranını göstər
+                errorMessage.style.display = "flex";
+                loadingScreen.style.display = "none";
             });
-        }
-
-        function showBonusMsg() {
-            gameMsg.style.opacity = "1";
-            setTimeout(() => gameMsg.style.opacity = "0", 1000);
-        }
-
-        function updateGame() {
-            targets.forEach(t => t.draw());
-            particles.forEach((p, i) => {
-                p.update();
-                p.draw();
-                if (p.alpha <= 0) particles.splice(i, 1);
-            });
-
-            if (Math.random() < 0.02) createTarget();
-        }
-
-        function startGame() {
-            score = 0;
-            timeLeft = 60;
-            targets = [];
-            particles = [];
-            scoreVal.innerText = "0";
-            timerVal.innerText = "60s";
-            gameActive = true;
-            startScreen.style.display = "none";
-
-            const timer = setInterval(() => {
-                timeLeft--;
-                timerVal.innerText = timeLeft + "s";
-                if (timeLeft <= 0) {
-                    clearInterval(timer);
-                    endGame();
-                }
-            }, 1000);
-        }
-
-        function endGame() {
-            gameActive = false;
-            startScreen.style.display = "flex";
-            startScreen.querySelector('h1').innerText = "OYUN BİTDİ!";
-            startScreen.querySelector('p').innerText = `Sizin Xalınız: ${score}\nYenidən cəhd etmək istəyirsiniz?`;
-            startBtn.innerText = "YENİDƏN BAŞLA";
-        }
-
-        startBtn.onclick = startGame;
 
     </script>
 </body>

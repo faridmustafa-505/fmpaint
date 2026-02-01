@@ -2,328 +2,278 @@
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Face Controller Game</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Göz İzləmə Tətbiqi</title>
+    <!-- Tailwind CSS (Dizayn üçün) -->
     <script src="https://cdn.tailwindcss.com"></script>
-
+    <!-- WebGazer.js (Göz izləmə kitabxanası) -->
+    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
     <style>
         body {
-            background-color: #000;
-            color: #00ffcc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Sürüşdürməni bağla */
+            background-color: #f3f4f6;
+            cursor: crosshair;
+        }
+
+        /* Baxış nöqtəsini göstərən qırmızı dairə */
+        #gaze-dot {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            background-color: rgba(255, 0, 0, 0.7);
+            border: 2px solid white;
+            border-radius: 50%;
+            pointer-events: none; /* Klikləməyə mane olmasın */
+            z-index: 9999;
+            transform: translate(-50%, -50%); /* Mərkəzləşdirmək üçün */
+            display: none; /* Başlanğıcda gizli */
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+            transition: all 0.1s ease-out; /* Yumşaq hərəkət üçün */
+        }
+
+        /* Kalibrasiya nöqtələri */
+        .calibration-point {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: red;
+            border: 3px solid white;
+            position: fixed;
+            cursor: pointer;
+            z-index: 1000;
+            display: none; /* Başlanğıcda gizli */
+            transition: background-color 0.3s;
+        }
+
+        /* Video elementinin yerləşməsi (WebGazer avtomatik yaradır, biz tənzimləyirik) */
+        #webgazerVideoContainer {
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
+            width: 240px !important;
+            height: auto !important;
+            z-index: 50;
+            border-radius: 10px;
             overflow: hidden;
-            font-family: 'Segoe UI', sans-serif;
-            margin: 0;
-            touch-action: none;
-            user-select: none;
+            border: 2px solid #4b5563;
+            opacity: 0.8;
         }
 
-        .game-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #000;
-        }
-
-        .input_video { display: none; }
-        .output_canvas { width: 100%; height: 100%; object-fit: cover; }
-
-        /* UI Overlay */
-        .ui-layer {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
+        /* Overlay mesajları */
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            z-index: 10;
-        }
-
-        .score-board {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            font-size: 2rem;
-            font-weight: bold;
-            color: #fff;
-            text-shadow: 0 0 10px #00ffcc;
-        }
-
-        .menu-box {
-            background: rgba(0, 0, 0, 0.85);
-            border: 2px solid #00ffcc;
-            padding: 40px;
-            border-radius: 20px;
+            justify-content: center;
+            color: white;
+            z-index: 2000;
             text-align: center;
-            pointer-events: auto;
-            box-shadow: 0 0 50px rgba(0, 255, 204, 0.3);
-            backdrop-filter: blur(10px);
+            padding: 20px;
         }
-
-        .btn {
-            background: #00ffcc;
-            color: #000;
-            border: none;
-            padding: 15px 40px;
-            font-size: 1.5rem;
-            font-weight: bold;
-            border-radius: 50px;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 20px #00ffcc;
-        }
-
-        .hidden { display: none !important; }
-
-        .tutorial {
-            margin-top: 10px;
-            color: #ccc;
-            font-size: 0.9rem;
-        }
-
     </style>
 </head>
 <body>
 
-    <div class="game-container">
-        <!-- Video Mənbəyi -->
-        <video class="input_video" playsinline webkit-playsinline></video>
-        <!-- Oyun Sahəsi -->
-        <canvas class="output_canvas"></canvas>
+    <!-- Baxış nöqtəsi -->
+    <div id="gaze-dot"></div>
 
-        <!-- UI -->
-        <div class="score-board hidden" id="score-display">0</div>
-
-        <div class="ui-layer" id="menu-layer">
-            <div class="menu-box" id="start-screen">
-                <h1 class="text-4xl text-teal-400 font-bold mb-2">NEON RUSH</h1>
-                <p class="text-white mb-4">Başınla idarə et!</p>
-                <div class="tutorial">
-                    🟢 Yaşıl = Xal (+10)<br>
-                    🔴 Qırmızı = Oyun Bitir<br>
-                    Başını sağa-sola əyərək gəmini sür.
-                </div>
-                <button class="btn" onclick="startGame()">OYNA</button>
-            </div>
-
-            <div class="menu-box hidden" id="game-over-screen">
-                <h1 class="text-3xl text-red-500 font-bold mb-2">OYUN BİTDİ!</h1>
-                <p class="text-2xl text-white mb-4">Nəticə: <span id="final-score">0</span></p>
-                <button class="btn" onclick="startGame()">YENİDƏN</button>
-            </div>
+    <!-- Başlanğıc və Təlimat Ekranı -->
+    <div id="overlay">
+        <h1 class="text-4xl font-bold mb-4">Göz İzləmə Tətbiqi</h1>
+        <p class="mb-6 max-w-lg text-lg text-gray-300">
+            Bu tətbiq kameranızdan istifadə edərək ekranda hara baxdığınızı təyin edir.
+            Dəqiqlik üçün <span class="text-yellow-400 font-bold">Kalibrasiya</span> vacibdir.
+        </p>
+        <div class="bg-gray-800 p-4 rounded-lg mb-6 text-left text-sm max-w-md">
+            <p class="font-bold text-yellow-500 mb-2">Necə işləyir?</p>
+            <ol class="list-decimal pl-5 space-y-1">
+                <li>Üzünüzü kameranın mərkəzində saxlayın (işıqlı mühitdə olun).</li>
+                <li>"Başla" düyməsinə basın və kamera icazəsi verin.</li>
+                <li>Ekranda çıxan 9 nöqtənin hər birinə <strong>baxaraq 5 dəfə klikləyin</strong>.</li>
+                <li>Nöqtələr yaşıl olanda kalibrasiya bitmiş sayılır.</li>
+            </ol>
         </div>
+        <button id="start-btn" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-full font-bold text-xl transition shadow-lg transform hover:scale-105">
+            İzləməni Başlat
+        </button>
+        <p id="loading-text" class="hidden mt-4 text-yellow-400 animate-pulse">WebGazer yüklənir...</p>
     </div>
 
+    <!-- Kalibrasiya üçün UI paneli (Gizlətmək/Göstərmək üçün) -->
+    <div id="controls" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-50 bg-white p-2 rounded-lg shadow-xl hidden flex gap-2">
+        <button id="toggle-video-btn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm text-black">
+            Kameranı Gizlət/Göstər
+        </button>
+        <button id="restart-btn" class="px-4 py-2 bg-red-500 hover:bg-red-600 rounded text-sm text-white">
+            Yenidən Kalibrasiya
+        </button>
+    </div>
+
+    <!-- Kalibrasiya Nöqtələri (JS ilə yerləşdiriləcək) -->
+    <div id="calibration-container"></div>
+
     <script>
-        const videoElement = document.getElementsByClassName('input_video')[0];
-        const canvasElement = document.getElementsByClassName('output_canvas')[0];
-        const ctx = canvasElement.getContext('2d', { alpha: false });
+        const gazeDot = document.getElementById('gaze-dot');
+        const startBtn = document.getElementById('start-btn');
+        const overlay = document.getElementById('overlay');
+        const loadingText = document.getElementById('loading-text');
+        const controls = document.getElementById('controls');
+        const calibrationContainer = document.getElementById('calibration-container');
+        
+        let isCalibrating = false;
 
-        // UI Elements
-        const scoreDisplay = document.getElementById('score-display');
-        const menuLayer = document.getElementById('menu-layer');
-        const startScreen = document.getElementById('start-screen');
-        const gameOverScreen = document.getElementById('game-over-screen');
-        const finalScoreEl = document.getElementById('final-score');
+        // Kalibrasiya nöqtələrinin koordinatları (faizlə: sol, yuxarı)
+        const points = [
+            { left: 10, top: 10 }, { left: 50, top: 10 }, { left: 90, top: 10 },
+            { left: 10, top: 50 }, { left: 50, top: 50 }, { left: 90, top: 50 },
+            { left: 10, top: 90 }, { left: 50, top: 90 }, { left: 90, top: 90 }
+        ];
 
-        // Game State
-        let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
-        let score = 0;
-        let playerX = 0.5; // 0.0 to 1.0
-        let gameSpeed = 3;
-        let items = []; // Objects falling down
-        let frameCount = 0;
+        // WebGazer-i başlatmaq üçün funksiya
+        startBtn.addEventListener('click', () => {
+            startBtn.classList.add('hidden');
+            loadingText.classList.remove('hidden');
 
-        function resizeCanvas() {
-            canvasElement.width = window.innerWidth;
-            canvasElement.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        function startGame() {
-            gameState = 'PLAYING';
-            score = 0;
-            gameSpeed = 4; // Start speed
-            items = [];
-            scoreDisplay.innerText = score;
-            
-            // UI Updates
-            startScreen.classList.add('hidden');
-            gameOverScreen.classList.add('hidden');
-            scoreDisplay.classList.remove('hidden');
-            menuLayer.classList.add('hidden'); // Hide overlay container so clicks don't block
-        }
-
-        function gameOver() {
-            gameState = 'GAMEOVER';
-            finalScoreEl.innerText = score;
-            menuLayer.classList.remove('hidden');
-            gameOverScreen.classList.remove('hidden');
-            scoreDisplay.classList.add('hidden');
-        }
-
-        function spawnItem() {
-            const type = Math.random() > 0.3 ? 'BAD' : 'GOOD'; // 70% Bad, 30% Good
-            items.push({
-                x: Math.random(), // 0.0 to 1.0
-                y: -0.1, // Start above screen
-                type: type,
-                size: type === 'BAD' ? 0.08 : 0.06 // Relative size
-            });
-        }
-
-        function updateGameLogic(aspectRatio) {
-            // Spawn items
-            if (frameCount % 40 === 0) { // Every ~1.5 seconds
-                spawnItem();
-                // Speed up slightly
-                if (gameSpeed < 15) gameSpeed += 0.05;
-            }
-            frameCount++;
-
-            // Move & Check Collisions
-            for (let i = items.length - 1; i >= 0; i--) {
-                let item = items[i];
-                
-                // Move down (speed adjusted by screen height roughly)
-                item.y += gameSpeed / 1000; 
-
-                // Draw Item Logic is handled in draw section, but logic is here
-                // Collision Detection
-                // Player is at playerX, y = 0.85
-                const playerY = 0.85;
-                const hitDistX = 0.1; // Hitbox width
-                const hitDistY = 0.1; // Hitbox height
-
-                // Simple box collision in normalized coordinates
-                if (item.y > playerY - hitDistY/2 && item.y < playerY + hitDistY/2) {
-                    if (Math.abs(item.x - playerX) < hitDistX) {
-                        // HIT!
-                        if (item.type === 'GOOD') {
-                            score += 10;
-                            scoreDisplay.innerText = score;
-                            // Remove item
-                            items.splice(i, 1);
-                            continue;
-                        } else {
-                            // BAD ITEM
-                            gameOver();
-                            return;
-                        }
+            // WebGazer konfiqurasiyası
+            webgazer.setRegression('ridge') /* Reqressiya metodu */
+                .setGazeListener(function(data, clock) {
+                    if (data == null) return;
+                    
+                    // Kalibrasiya bitibsə nöqtəni hərəkət etdir
+                    if (!isCalibrating) {
+                        moveGazeDot(data.x, data.y);
                     }
-                }
+                })
+                .saveDataAcrossSessions(true)
+                .begin()
+                .then(() => {
+                    console.log("WebGazer başladı");
+                    setupCalibration();
+                })
+                .catch(e => {
+                    alert("Kamera xətası: " + e);
+                    location.reload();
+                });
 
-                // Remove if off screen
-                if (item.y > 1.1) {
-                    items.splice(i, 1);
+            // Video elementini tənzimlə (WebGazer DOM-a əlavə etdikdən sonra)
+            setupVideoPreview();
+        });
+
+        function setupVideoPreview() {
+            // WebGazer video elementini bir az gec yarada bilər
+            setTimeout(() => {
+                const videoContainer = document.getElementById('webgazerVideoContainer');
+                if (videoContainer) {
+                    videoContainer.style.display = 'block';
+                    // Üz izləmə qutusu rəngini dəyişmək (standart qırmızı olur)
+                    webgazer.params.showFaceOverlay = true; 
+                    webgazer.params.showFaceFeedbackBox = true;
                 }
-            }
+            }, 1000);
         }
 
-        function drawGame(canvasWidth, canvasHeight) {
-            // 1. Draw Player (Triangle/Ship)
-            const px = playerX * canvasWidth; // Flip logic handled before? No, playerX comes from mirrored video usually
-            const py = canvasHeight * 0.85;
-            const size = 40;
-
-            ctx.beginPath();
-            ctx.moveTo(px, py - size);
-            ctx.lineTo(px - size, py + size);
-            ctx.lineTo(px + size, py + size);
-            ctx.fillStyle = '#00ffcc';
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = '#00ffcc';
-            ctx.fill();
-            ctx.shadowBlur = 0;
-
-            // 2. Draw Items
-            items.forEach(item => {
-                const ix = item.x * canvasWidth;
-                const iy = item.y * canvasHeight;
-                const iSize = item.size * canvasWidth; // Scale by width
-
-                ctx.beginPath();
-                if (item.type === 'GOOD') {
-                    // Green Ball
-                    ctx.arc(ix, iy, iSize/2, 0, Math.PI * 2);
-                    ctx.fillStyle = '#00ff00';
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#00ff00';
-                } else {
-                    // Red Spike/Virus
-                    ctx.moveTo(ix, iy - iSize/2);
-                    ctx.lineTo(ix + iSize/2, iy + iSize/2);
-                    ctx.lineTo(ix - iSize/2, iy + iSize/2);
-                    ctx.fillStyle = '#ff0000';
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#ff0000';
-                }
-                ctx.fill();
-                ctx.shadowBlur = 0;
-            });
+        // Baxış nöqtəsini hərəkət etdirmək (yumşaq hərəkət üçün)
+        function moveGazeDot(x, y) {
+            // Sadə hamarlama (Smoothness)
+            gazeDot.style.display = 'block';
+            gazeDot.style.left = x + 'px';
+            gazeDot.style.top = y + 'px';
         }
 
-        function onResults(results) {
-            // 1. Draw Video Background
-            ctx.save();
-            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            // Mirror image for natural feel
-            ctx.translate(canvasElement.width, 0);
-            ctx.scale(-1, 1);
-            ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-            ctx.restore();
+        // Kalibrasiya sistemini qurmaq
+        function setupCalibration() {
+            loadingText.classList.add('hidden');
+            overlay.style.display = 'none'; // Əsas menyunu gizlət
+            controls.classList.remove('hidden');
+            isCalibrating = true;
+            
+            // Köhnə nöqtələri təmizlə
+            calibrationContainer.innerHTML = '';
 
-            // Darken filter
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-            ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-
-            // 2. Detect Player Position (Nose)
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                const landmarks = results.multiFaceLandmarks[0];
-                const nose = landmarks[1]; // Nose tip
+            // Nöqtələri yarat
+            points.forEach((pos, index) => {
+                const dot = document.createElement('div');
+                dot.className = 'calibration-point';
+                dot.style.left = pos.left + '%';
+                dot.style.top = pos.top + '%';
+                dot.style.display = 'block';
+                dot.dataset.clicks = 0; // Klik sayğacı
+                dot.id = `calib-pt-${index}`;
                 
-                // Update global player X (Mirror logic: 1 - x)
-                // MediaPipe x is 0-1 from left to right.
-                // Since we mirrored the canvas draw, we also need to treat input as mirrored for logic if we want "moving right moves right".
-                // Actually, if I move head right, x increases. 
-                // Let's just use 1-nose.x to match the mirrored video.
-                playerX = 1 - nose.x;
-            }
+                // Klikləmə məntiqi
+                dot.addEventListener('click', (e) => {
+                    const clicks = parseInt(dot.dataset.clicks) + 1;
+                    dot.dataset.clicks = clicks;
 
-            // 3. Game Logic Loop (Only if playing)
-            if (gameState === 'PLAYING') {
-                updateGameLogic(canvasElement.width / canvasElement.height);
-                drawGame(canvasElement.width, canvasElement.height);
+                    // WebGazer-ə məlumat göndər: "Mən hazırda bura baxıram"
+                    // WebGazer bunu avtomatik edir kliklənəndə, amma əmin olmaq üçün:
+                    webgazer.recordScreenPosition(e.clientX, e.clientY, 'click');
+
+                    // Rəng dəyişimi (Vizual geri bildiriş)
+                    const opacity = Math.min(clicks / 5, 1);
+                    
+                    if (clicks < 5) {
+                        dot.style.backgroundColor = `rgba(255, 255, 0, ${0.5 + opacity/2})`; // Sarıya doğru
+                    } else {
+                        dot.style.backgroundColor = '#22c55e'; // Yaşıl (Tamamlandı)
+                        dot.style.border = '3px solid #000';
+                        checkCalibrationComplete();
+                    }
+                });
+
+                calibrationContainer.appendChild(dot);
+            });
+            
+            alert("İndi kalibrasiya edəcəyik. Qırmızı nöqtələrin hər birinə baxın və rəngi yaşıl olana qədər (5 dəfə) klikləyin.");
+        }
+
+        // Kalibrasiyanın bitib-bitmədiyini yoxla
+        function checkCalibrationComplete() {
+            const allDots = document.querySelectorAll('.calibration-point');
+            let completed = 0;
+            allDots.forEach(dot => {
+                if (parseInt(dot.dataset.clicks) >= 5) completed++;
+            });
+
+            if (completed === points.length) {
+                alert("Kalibrasiya tamamlandı! İndi gözlərinizi hərəkət etdirin, qırmızı nöqtə sizi izləyəcək.");
+                isCalibrating = false;
+                // Nöqtələri gizlət
+                allDots.forEach(dot => dot.style.display = 'none');
+                // Proqnozu göstər
+                webgazer.showPredictionPoints(true); 
             }
         }
 
-        const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: false,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+        // Kameranı gizlət/göstər düyməsi
+        document.getElementById('toggle-video-btn').addEventListener('click', () => {
+            const videoContainer = document.getElementById('webgazerVideoContainer');
+            if (videoContainer) {
+                if (videoContainer.style.display === 'none') {
+                    videoContainer.style.display = 'block';
+                } else {
+                    videoContainer.style.display = 'none';
+                }
+            }
         });
-        faceMesh.onResults(onResults);
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => await faceMesh.send({image: videoElement}),
-            width: 640, // Low res for performance
-            height: 480,
-            facingMode: 'user'
+        // Yenidən başlat düyməsi
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            webgazer.clearData();
+            setupCalibration();
         });
-        camera.start();
+
+        // Pəncərə bağlananda WebGazer-i dayandır
+        window.onbeforeunload = function() {
+            webgazer.end();
+        };
 
     </script>
 </body>

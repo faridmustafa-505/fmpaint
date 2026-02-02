@@ -3,240 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Göz İzləmə (Fix Versiya)</title>
-    <!-- Tailwind CSS -->
+    <title>Göz İzləyici (Eye Tracker)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- WebGazer.js -->
-    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+    <!-- WebGazer.js Kitabxanası -->
+    <script src="https://webgazer.cs.brown.edu/webgazer.js" defer></script>
     <style>
         body {
-            font-family: sans-serif;
-            overflow: hidden;
-            background-color: #f0fdf4;
-            user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
         }
-
-        #gaze-cursor {
-            position: fixed;
+        /* Kalibrasiya nöqtələri üçün stil */
+        .calibration-point {
             width: 20px;
             height: 20px;
-            background-color: #ef4444; 
-            border: 2px solid white;
             border-radius: 50%;
-            pointer-events: none;
-            z-index: 9999;
-            transform: translate(-50%, -50%);
-            display: none;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
-        }
-
-        .calibration-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: #ef4444;
-            border: 4px solid white;
+            border: 2px solid #fff;
+            background-color: #EF4444; /* Qırmızı */
+            opacity: 0.7;
             position: fixed;
+            z-index: 50;
             cursor: pointer;
-            z-index: 1000;
-            display: none;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            transition: transform 0.1s;
+            transition: transform 0.2s, background-color 0.2s;
         }
-        .calibration-btn:active { transform: scale(0.9); }
+        .calibration-point:hover {
+            transform: scale(1.5);
+            background-color: #3B82F6; /* Mavi */
+        }
+        
+        /* Göz izləmə nöqtəsi (Cursor) */
+        #gaze-dot {
+            width: 20px;
+            height: 20px;
+            background-color: rgba(255, 0, 0, 0.7);
+            border-radius: 50%;
+            position: fixed;
+            z-index: 40;
+            pointer-events: none; /* Klikləməyə mane olmasın */
+            display: none;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+            transition: all 0.1s linear;
+        }
 
+        /* Video qutusunu yerləşdirmək */
         #webgazerVideoContainer {
             position: fixed !important;
-            top: 15px !important;
-            left: 15px !important;
-            border-radius: 10px;
-            border: 3px solid #3b82f6;
+            top: 10px !important;
+            left: 10px !important;
+            width: 160px !important;
+            height: 120px !important;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #4F46E5;
             z-index: 100;
-        }
-
-        #overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(17, 24, 39, 0.95);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            z-index: 2000;
-            text-align: center;
+            display: none; /* Başlanğıcda gizli */
         }
     </style>
 </head>
-<body>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center">
 
-    <div id="gaze-cursor"></div>
-
-    <!-- Status Bar -->
-    <div id="status-bar" class="fixed top-0 left-0 w-full bg-white shadow-md p-2 flex justify-end items-center gap-4 px-4 z-40 hidden">
-        <span class="text-gray-700 font-medium text-sm">Status: <span id="calib-status" class="text-blue-600">Hazırdır</span></span>
-        <button onclick="hardReset()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition">Tam Sıfırla</button>
-    </div>
-
-    <!-- Başlanğıc -->
-    <div id="overlay">
-        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl max-w-md border border-gray-700">
-            <h1 class="text-2xl font-bold mb-2 text-white">Göz İzləyici v2</h1>
-            <p class="text-gray-400 mb-6 text-xs">Yaddaş təmizləndi. Sabit versiya.</p>
-            
-            <div class="text-left bg-gray-900/50 p-4 rounded-lg mb-6 border border-gray-700">
-                <ul class="list-disc pl-5 text-gray-300 space-y-2 text-xs">
-                    <li>Kameraya icazə verin.</li>
-                    <li>Üzünüz yaşıl çərçivəyə düşəndə başlayın.</li>
-                    <li>9 qırmızı düymənin hər birinə baxıb <strong>5 dəfə klikləyin</strong>.</li>
-                </ul>
+    <!-- İdarəetmə Paneli -->
+    <div class="z-50 w-full max-w-4xl p-6 bg-slate-800 rounded-b-xl shadow-2xl border-b border-slate-700">
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-indigo-400">Göz İzləyici</h1>
+                <p class="text-slate-400 text-sm">Veb-kamera əsaslı izləmə sistemi</p>
             </div>
-
-            <button id="start-btn" class="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white transition-all shadow-lg">
-                Kameranı Aç və Başla
-            </button>
-            <p id="loading-msg" class="mt-4 text-yellow-400 text-xs hidden animate-pulse">Yüklənir...</p>
+            
+            <div class="flex gap-3">
+                <button id="btn-start" onclick="startTracking()" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition shadow-lg flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    Kameranı Başlat
+                </button>
+                <button id="btn-calibrate" onclick="toggleCalibration()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition shadow-lg hidden" disabled>
+                    Kalibrasiya Rejimi
+                </button>
+                <button id="btn-stop" onclick="stopTracking()" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition shadow-lg hidden">
+                    Dayandır
+                </button>
+            </div>
+        </div>
+        
+        <!-- Status Mesajı -->
+        <div id="status-msg" class="mt-4 text-center text-amber-300 bg-amber-900/30 py-2 rounded border border-amber-700/50">
+            Başlamaq üçün "Kameranı Başlat" düyməsini sıxın.
         </div>
     </div>
 
-    <div id="calibration-container"></div>
+    <!-- Təlimat -->
+    <div id="instructions" class="mt-10 max-w-2xl text-center px-4 transition-opacity duration-500">
+        <h2 class="text-xl font-semibold mb-3">Necə işləyir?</h2>
+        <ul class="text-slate-300 space-y-2 text-left bg-slate-800 p-6 rounded-xl border border-slate-700">
+            <li class="flex items-start gap-2"><span class="text-indigo-400 font-bold">1.</span> Kameraya icazə verin. Üzünüzün kamerada yaşıl çərçivə içində olduğuna əmin olun.</li>
+            <li class="flex items-start gap-2"><span class="text-indigo-400 font-bold">2.</span> <span class="text-yellow-400 font-semibold">ÇOX VACİB:</span> Dəqiqlik üçün "Kalibrasiya" düyməsini basın.</li>
+            <li class="flex items-start gap-2"><span class="text-indigo-400 font-bold">3.</span> Ekranda görünən 9 qırmızı nöqtənin hər birinə diqqətlə baxın və hər birinə <span class="text-white font-bold">5 dəfə klikləyin</span>.</li>
+            <li class="flex items-start gap-2"><span class="text-indigo-400 font-bold">4.</span> Kliklədikcə nöqtələr sarı rəngə dönəcək. Bitdikdən sonra qırmızı kursor gözünüzü izləməyə başlayacaq.</li>
+        </ul>
+    </div>
+
+    <!-- İzləmə Nöqtəsi -->
+    <div id="gaze-dot"></div>
+
+    <!-- Kalibrasiya Konteyneri -->
+    <div id="calibration-overlay" class="hidden w-full h-full fixed top-0 left-0 pointer-events-none z-40">
+        <!-- Nöqtələr JS ilə yaradılacaq -->
+    </div>
 
     <script>
-        const startBtn = document.getElementById('start-btn');
-        const overlay = document.getElementById('overlay');
-        const loadingMsg = document.getElementById('loading-msg');
-        const gazeCursor = document.getElementById('gaze-cursor');
-        const calibContainer = document.getElementById('calibration-container');
-        const calibStatus = document.getElementById('calib-status');
-        const statusBar = document.getElementById('status-bar');
-
+        let isTracking = false;
         let isCalibrating = false;
-        const points = [
-            { x: 10, y: 10 }, { x: 50, y: 10 }, { x: 90, y: 10 },
-            { x: 10, y: 50 }, { x: 50, y: 50 }, { x: 90, y: 50 },
-            { x: 10, y: 90 }, { x: 50, y: 90 }, { x: 90, y: 90 }
-        ];
 
-        startBtn.addEventListener('click', async () => {
-            startBtn.disabled = true;
-            loadingMsg.classList.remove('hidden');
-            
-            // 1. MƏCBURİ YADDAŞ TƏMİZLİYİ (Xətanın əsas həlli)
+        // WebGazer yüklənənə qədər gözləyirik
+        window.onload = function() {
+            // WebGazer hazır olduqda funksiyaları yükləyə bilərik
+            console.log("WebGazer yüklənməyə hazırdır.");
+        };
+
+        async function startTracking() {
             try {
-                window.localStorage.clear();
-                if (window.webgazer) {
-                    webgazer.clearData();
+                updateStatus("Kamera işə salınır...", "text-blue-400");
+                
+                // WebGazer-i başladırıq
+                await webgazer.setRegression('ridge') /* Sadə reqressiya */
+                    .setGazeListener(function(data, clock) {
+                        if (data == null) return;
+                        
+                        // İzləmə nöqtəsini yeniləyirik
+                        const gazeDot = document.getElementById('gaze-dot');
+                        if (isTracking && !isCalibrating) {
+                            gazeDot.style.display = 'block';
+                            gazeDot.style.transform = `translate(${data.x}px, ${data.y}px)`;
+                        } else {
+                            gazeDot.style.display = 'none';
+                        }
+                    })
+                    .saveDataAcrossSessions(true)
+                    .begin();
+
+                webgazer.showVideoPreview(true) /* Video görünüşünü aktiv et */
+                    .showPredictionPoints(false) /* Varsayılan proqnozu gizlət, biz özümüzünkünü istifadə edirik */
+                    .applyKalmanFilter(true); /* Hərəkəti yumşaltmaq üçün */
+
+                // UI Yeniləmələri
+                isTracking = true;
+                
+                // Video konteynerini düzəltmək
+                const videoContainer = document.getElementById('webgazerVideoContainer');
+                if(videoContainer) {
+                    videoContainer.style.display = 'block';
+                    videoContainer.style.top = '80px'; // Navbar-dan aşağı
                 }
-            } catch (e) { console.warn("Yaddaş təmizləmə xətası:", e); }
 
-            try {
-                await initWebGazer();
+                document.getElementById('btn-start').classList.add('hidden');
+                document.getElementById('btn-stop').classList.remove('hidden');
+                document.getElementById('btn-calibrate').classList.remove('hidden');
+                document.getElementById('btn-calibrate').disabled = false;
+                document.getElementById('instructions').style.opacity = '0.5';
+
+                updateStatus("İzləmə aktivdir. Dəqiqlik üçün Kalibrasiya edin!", "text-green-400");
+                
+                setupCalibrationPoints();
+
             } catch (err) {
                 console.error(err);
-                alert("Başlatma xətası: " + err.message + "\nSəhifəni yeniləyin.");
-                location.reload();
+                updateStatus("Xəta baş verdi: Kameraya icazə verildiyinə əmin olun.", "text-red-500");
             }
-        });
-
-        async function initWebGazer() {
-            // WebGazer konfiqurasiyası - Sadələşdirilmiş
-            webgazer.saveDataAcrossSessions(false); // Sessiya yaddaşını bağla
-            
-            // Listener-i əvvəlcədən təyin et
-            webgazer.setGazeListener((data, clock) => {
-                if (data == null) return;
-                if (!isCalibrating) {
-                    gazeCursor.style.display = 'block';
-                    gazeCursor.style.left = `${data.x}px`;
-                    gazeCursor.style.top = `${data.y}px`;
-                }
-            });
-
-            // Başlat
-            await webgazer.begin();
-
-            // UI Tənzimləmələri
-            const video = document.getElementById('webgazerVideoContainer');
-            if (video) {
-                video.style.position = 'fixed';
-                video.style.top = '15px';
-                video.style.left = '15px';
-                video.style.width = '200px';
-                video.style.height = 'auto';
-                
-                // Üz qutusunu göstər
-                webgazer.params.showFaceOverlay = true;
-                webgazer.params.showFaceFeedbackBox = true;
-            }
-
-            setupCalibration();
         }
 
-        function setupCalibration() {
-            overlay.style.display = 'none';
-            statusBar.classList.remove('hidden');
-            isCalibrating = true;
-            calibStatus.innerText = "Kalibrasiya (Nöqtələrə klikləyin)";
-            calibStatus.className = "text-yellow-600 font-bold";
+        function stopTracking() {
+            webgazer.end();
+            isTracking = false;
+            
+            // Video konteynerini gizlət
+            const videoContainer = document.getElementById('webgazerVideoContainer');
+            if(videoContainer) videoContainer.style.display = 'none';
 
-            calibContainer.innerHTML = '';
-            points.forEach((p, index) => {
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('btn-calibrate').classList.add('hidden');
+            document.getElementById('gaze-dot').style.display = 'none';
+            document.getElementById('instructions').style.opacity = '1';
+            
+            toggleCalibration(false); // Kalibrasiyanı söndür əgər açıqdırsa
+
+            updateStatus("İzləmə dayandırıldı.", "text-slate-400");
+            // Səhifəni yeniləmək ən təmiz yoldur, kitabxana bəzən qalıqlar buraxır
+            setTimeout(() => location.reload(), 1000);
+        }
+
+        function updateStatus(text, colorClass) {
+            const el = document.getElementById('status-msg');
+            el.innerText = text;
+            el.className = `mt-4 text-center py-2 rounded border border-slate-700 ${colorClass} bg-slate-800`;
+        }
+
+        // --- Kalibrasiya Məntiqi ---
+
+        function setupCalibrationPoints() {
+            const overlay = document.getElementById('calibration-overlay');
+            overlay.innerHTML = ''; // Təmizlə
+
+            // Ekranın müxtəlif yerlərində 9 nöqtə (Grid)
+            const positions = [
+                { top: '10%', left: '10%' }, { top: '10%', left: '50%' }, { top: '10%', left: '90%' },
+                { top: '50%', left: '10%' }, { top: '50%', left: '50%' }, { top: '50%', left: '90%' },
+                { top: '90%', left: '10%' }, { top: '90%', left: '50%' }, { top: '90%', left: '90%' }
+            ];
+
+            positions.forEach((pos, index) => {
                 const btn = document.createElement('div');
-                btn.className = 'calibration-btn';
-                btn.style.left = `${p.x}%`;
-                btn.style.top = `${p.y}%`;
-                btn.style.display = 'block';
-                btn.dataset.clicks = 0;
+                btn.className = 'calibration-point pointer-events-auto';
+                btn.style.top = pos.top;
+                btn.style.left = pos.left;
+                btn.setAttribute('data-clicks', 0);
                 
+                // Klikləmə məntiqi
                 btn.addEventListener('click', (e) => {
-                    let clicks = parseInt(btn.dataset.clicks) + 1;
-                    btn.dataset.clicks = clicks;
-
-                    // WebGazer-ə məlumat ötür
-                    // Bu çox vacibdir, klik anını qeydə alır
-                    webgazer.recordScreenPosition(e.clientX, e.clientY, 'click');
-
-                    // Vizual effekt
-                    const opacity = Math.min(clicks / 5, 1);
-                    if (clicks < 5) {
-                        btn.style.backgroundColor = `rgba(255, 215, 0, ${0.4 + opacity/2})`;
-                    } else {
-                        btn.style.backgroundColor = '#22c55e';
-                        btn.style.borderColor = '#000';
-                    }
-
-                    // Hamısını yoxla
-                    const allDone = Array.from(document.querySelectorAll('.calibration-btn'))
-                        .every(b => parseInt(b.dataset.clicks) >= 5);
+                    let clicks = parseInt(btn.getAttribute('data-clicks')) + 1;
+                    btn.setAttribute('data-clicks', clicks);
                     
-                    if (allDone) {
-                        isCalibrating = false;
-                        calibStatus.innerText = "Aktivdir";
-                        calibStatus.className = "text-green-600 font-bold";
-                        document.querySelectorAll('.calibration-btn').forEach(b => b.style.display = 'none');
-                        webgazer.showPredictionPoints(false);
-                        alert("Kalibrasiya bitdi!");
+                    // Görsel geribildirim (hər klikdə biraz böyüyür və rəngi dəyişir)
+                    const opacity = Math.min(clicks * 0.2, 1);
+                    btn.style.backgroundColor = `rgba(255, 255, 0, ${opacity})`; // Sarıya dönür
+                    btn.style.transform = `scale(${1 + (clicks * 0.1)})`;
+
+                    if (clicks >= 5) {
+                        btn.style.backgroundColor = '#10B981'; // Yaşıl (tamamlandı)
+                        checkCalibrationComplete();
                     }
                 });
 
-                calibContainer.appendChild(btn);
+                overlay.appendChild(btn);
             });
+        }
+
+        function toggleCalibration(forceState) {
+            const overlay = document.getElementById('calibration-overlay');
+            const instructions = document.getElementById('instructions');
             
-            alert("Kalibrasiya başlayır. 9 qırmızı düyməyə baxaraq hərəsinə 5 dəfə klikləyin.");
+            if (typeof forceState !== 'undefined') {
+                isCalibrating = forceState;
+            } else {
+                isCalibrating = !isCalibrating;
+            }
+
+            if (isCalibrating) {
+                overlay.classList.remove('hidden');
+                instructions.classList.add('hidden'); // Ekranı təmizlə
+                updateStatus("Hər qırmızı nöqtəyə baxın və 5 dəfə klikləyin.", "text-yellow-400");
+                // Reset points visually
+                setupCalibrationPoints();
+            } else {
+                overlay.classList.add('hidden');
+                instructions.classList.remove('hidden');
+                updateStatus("Kalibrasiya bitdi. İndi qırmızı nöqtə gözünüzü izləyəcək.", "text-green-400");
+            }
         }
 
-        window.hardReset = function() {
-            try {
-                webgazer.end();
-                window.localStorage.clear();
-            } catch(e) {}
-            window.location.reload();
+        function checkCalibrationComplete() {
+            const points = document.querySelectorAll('.calibration-point');
+            let completed = 0;
+            points.forEach(p => {
+                if (parseInt(p.getAttribute('data-clicks')) >= 5) completed++;
+            });
+
+            if (completed === points.length) {
+                // Avtomatik bağla
+                setTimeout(() => {
+                    toggleCalibration(false);
+                }, 500);
+            }
         }
-
-        window.addEventListener("beforeunload", function() {
-            try { webgazer.end(); } catch(e) {}
-        });
-
     </script>
 </body>
 </html>

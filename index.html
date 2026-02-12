@@ -14,18 +14,30 @@
     <!-- PeerJS (Video və Səs Zəngləri üçün) -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-    <!-- Firebase (Məlumat Sinxronizasiyası) -->
+    <!-- Firebase (Sizin Konfiqurasiyanız) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, addDoc, serverTimestamp, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // SİZİN FIREBASE KONFİQURASİYANIZ
+        const firebaseConfig = {
+            apiKey: "AIzaSyALBhMZoDFowkTROYa1awwo-3FbvmnJJpQ",
+            authDomain: "azesmmpanel0.firebaseapp.com",
+            databaseURL: "https://azesmmpanel0-default-rtdb.firebaseio.com",
+            projectId: "azesmmpanel0",
+            storageBucket: "azesmmpanel0.firebasestorage.app",
+            messagingSenderId: "74060568870",
+            appId: "1:74060568870:web:5f5aed2cbef031c2c149e7"
+        };
+
         // Firebase Quraşdırılması
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // Tətbiqiniz üçün sabit bir ID (Məlumatları Firestore-da qruplaşdırmaq üçün)
+        const appId = 'havada-paint-azesmmpanel0';
 
         // Qlobal Dəyişənlər
         let currentUser = null;
@@ -83,15 +95,13 @@
 
         // --- Auth & Lobby Logic ---
         
+        // Sizin öz Firebase-iniz olduğu üçün Anonim Giriş (Anonymous Auth) istifadə edirik
         const initAuth = async () => {
             try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                await signInAnonymously(auth);
             } catch (error) {
-                showError("Giriş xətası. Səhifəni yeniləyin.");
+                console.error("Giriş xətası:", error);
+                showError("Giriş xətası. Lütfən Firebase 'Anonymous Auth' aktiv olduğundan əmin olun.");
             }
         };
 
@@ -108,7 +118,7 @@
         function showError(msg) {
             errorMsg.textContent = msg;
             errorMsg.classList.remove('hidden');
-            setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+            setTimeout(() => errorMsg.classList.add('hidden'), 5000);
         }
 
         function generateRoomCode() {
@@ -130,13 +140,19 @@
             const roomId = generateRoomCode();
             currentRoomId = roomId;
 
-            // Otağı yarat
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId), {
-                createdAt: serverTimestamp(),
-                host: currentUser.uid
-            });
-
-            startGame(roomId);
+            try {
+                // Otağı yarat
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId), {
+                    createdAt: serverTimestamp(),
+                    host: currentUser.uid
+                });
+                startGame(roomId);
+            } catch (error) {
+                console.error("Firestore xətası:", error);
+                showError("Otaq yaradılmadı. Firestore qaydalarını yoxlayın.");
+                screens.loading.classList.add('hidden');
+                screens.lobby.classList.remove('hidden');
+            }
         });
 
         document.getElementById('joinRoomBtn').addEventListener('click', async () => {
@@ -149,17 +165,23 @@
             screens.lobby.classList.add('hidden');
             screens.loading.classList.remove('hidden');
 
-            // Otağı yoxla
-            const roomSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId));
-            if (!roomSnap.exists()) {
+            try {
+                // Otağı yoxla
+                const roomSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId));
+                if (!roomSnap.exists()) {
+                    screens.loading.classList.add('hidden');
+                    screens.lobby.classList.remove('hidden');
+                    return showError("Bu kodda otaq tapılmadı!");
+                }
+
+                myNickname = name;
+                currentRoomId = roomId;
+                startGame(roomId);
+            } catch (error) {
+                showError("Baza ilə əlaqə qurulmadı.");
                 screens.loading.classList.add('hidden');
                 screens.lobby.classList.remove('hidden');
-                return showError("Bu kodda otaq tapılmadı!");
             }
-
-            myNickname = name;
-            currentRoomId = roomId;
-            startGame(roomId);
         });
 
         // --- Game Setup (MediaPipe, WebRTC, Firebase Listeners) ---
@@ -333,15 +355,14 @@
             } catch(e) { console.error("Xətt yadda saxlanmadı:", e); }
         }
 
-        // Kursor yenilənməsini sürət limitinə salırıq (giriş limitlərini aşmamaq üçün)
         let lastCursorUpdate = 0;
         async function updateLocalCursor(x, y) {
             const now = Date.now();
-            if (now - lastCursorUpdate > 100) { // Saniyədə 10 dəfə yenilənir
+            if (now - lastCursorUpdate > 100) { 
                 lastCursorUpdate = now;
                 if(currentRoomId && currentUser) {
                     await setDoc(doc(getPlayersRef(currentRoomId), currentUser.uid), {
-                        x: x / canvasWidth, // Faizi göndəririk ki, fərqli ekranlarda düzgün görünsün
+                        x: x / canvasWidth, 
                         y: y / canvasHeight
                     }, { merge: true }).catch(e=>{});
                 }
@@ -386,7 +407,6 @@
             
             hands.onResults(onResults);
 
-            // Xüsusi loop ilə kameradan kadrları AI-ya göndəririk
             async function processVideo() {
                 if (!localVideoElement.paused && !localVideoElement.ended) {
                     await hands.send({image: localVideoElement});
@@ -429,7 +449,6 @@
                 const indexTip = landmarks[8];
                 const thumbTip = landmarks[4];
 
-                // Güzgü effekti (X koordinatını tərsinə çeviririk)
                 const x = (1 - indexTip.x) * canvasWidth;
                 const y = indexTip.y * canvasHeight;
                 const tx = (1 - thumbTip.x) * canvasWidth;
@@ -440,25 +459,20 @@
                 const distance = Math.hypot(x - tx, y - ty);
                 const isPinching = distance < (canvasWidth * 0.04);
 
-                // --- Çəkmə Məntiqi ---
                 if (isPinching && !wasPinching) {
-                    // Başlanğıc
                     startX = x;
                     startY = y;
                     currentPoints = [{x: x/canvasWidth, y: y/canvasHeight}];
                 }
 
                 if (isPinching) {
-                    // Proses
                     if (currentTool === 'pen' || currentTool === 'eraser') {
-                        // Nöqtələri əlavə et (optimizasiya üçün yalnız məsafə çoxdursa əlavə edirik)
                         const lastPoint = currentPoints[currentPoints.length-1];
                         const dist = Math.hypot(lastPoint.x - (x/canvasWidth), lastPoint.y - (y/canvasHeight));
-                        if(dist > 0.005) { // çox xırda hərəkətləri qeyd etmirik
+                        if(dist > 0.005) { 
                             currentPoints.push({x: x/canvasWidth, y: y/canvasHeight});
                         }
 
-                        // Canlı çəkirik
                         drawingCtx.beginPath();
                         drawingCtx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
                         drawingCtx.moveTo(startX, startY);
@@ -472,12 +486,10 @@
                         startX = x;
                         startY = y;
                     } else {
-                        // Fiqurların önizlənməsi
                         drawShapePreview(startX, startY, x, y);
                     }
                 } 
                 else if (!isPinching && wasPinching) {
-                    // Barmaqlar aralandı, xətti yadda saxla
                     let strokeData = {
                         tool: currentTool,
                         color: toolColor,
@@ -500,7 +512,6 @@
 
                 wasPinching = isPinching;
 
-                // Kursorun dizaynı
                 overlayCtx.beginPath();
                 overlayCtx.arc(x, y, isPinching ? lineWidth : lineWidth + 4, 0, 2 * Math.PI);
                 overlayCtx.fillStyle = isPinching ? toolColor : 'rgba(255, 255, 255, 0.5)';
@@ -512,7 +523,7 @@
                 }
             } else {
                 wasPinching = false;
-                updateLocalCursor(-1, -1); // Ekranda yoxdur
+                updateLocalCursor(-1, -1); 
             }
         }
     </script>
@@ -595,7 +606,7 @@
                     ⭕ Dairə
                 </button>
 
-                <div class="w-px h-6 bg-gray-500 mx-2"></div> <!-- Ayırıcı -->
+                <div class="w-px h-6 bg-gray-500 mx-2"></div>
 
                 <input type="color" id="colorPicker" value="#00ffcc" class="w-8 h-8 rounded cursor-pointer border-none outline-none bg-transparent">
                 <input type="range" id="lineWidth" min="2" max="40" value="8" class="cursor-pointer accent-blue-500 w-20">
@@ -608,14 +619,10 @@
 
         <!-- İş Sahəsi -->
         <div class="relative flex-1 w-full bg-[#1a1a2e] overflow-hidden" id="workspace">
-            <!-- Rəsmlər Kətanı -->
             <canvas id="drawingCanvas" class="absolute top-0 left-0 w-full h-full z-10 bg-[#1a1a2e]"></canvas>
-            <!-- Kursorlar Kətanı -->
             <canvas id="overlayCanvas" class="absolute top-0 left-0 w-full h-full z-20 pointer-events-none"></canvas>
             
-            <!-- Oyunçuların Kameraları (Sağ alt künc) -->
             <div id="videoGrid" class="absolute bottom-6 right-6 z-30 flex flex-wrap-reverse gap-4 max-w-[50%] justify-end pointer-events-none">
-                <!-- Yerli Kamera (Güzgü effektli, səssiz) -->
                 <div class="relative w-32 h-32 md:w-40 md:h-40 rounded-xl overflow-hidden shadow-2xl border-2 border-blue-500 bg-black">
                     <video id="localVideo" autoplay playsinline muted class="w-full h-full object-cover transform scale-x-[-1]"></video>
                     <div class="absolute bottom-1 left-1 bg-black/50 text-xs px-2 py-1 rounded text-white font-semibold">Siz</div>
